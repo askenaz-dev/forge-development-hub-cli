@@ -1,0 +1,263 @@
+openapi: 3.1.0
+info:
+  title: FDH Portal API
+  version: "1.0.0"
+  description: |
+    Read-only HTTP API serving the Falabella Development Hub skill registry
+    to the portal frontend and other automation.
+
+    The API is a thin JSON view over the Git-backed registry consumed via
+    `pkg/registry.Registry`. There is exactly one definition of the registry
+    shape across the CLI and the portal.
+  license:
+    name: MIT
+
+servers:
+  - url: /api/v1
+    description: Versioned API root
+
+paths:
+  /skills:
+    get:
+      operationId: listSkills
+      summary: List skills in the catalog
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Case-insensitive substring across name, namespace, description, tags
+        - in: query
+          name: namespace
+          schema: { type: string }
+        - in: query
+          name: tag
+          schema: { type: string }
+        - in: query
+          name: scan_status
+          schema: { type: string, enum: [pass, warn, fail, none] }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        "200":
+          description: Page of skill summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillsPage"
+
+  /skills/{namespace}/{name}:
+    get:
+      operationId: getSkill
+      summary: Full manifest for one skill
+      parameters:
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+      responses:
+        "200":
+          description: Skill manifest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillManifest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /skills/{namespace}/{name}/versions/{version}:
+    get:
+      operationId: getSkillVersion
+      summary: Metadata for one published version
+      parameters:
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+        - $ref: "#/components/parameters/Version"
+      responses:
+        "200":
+          description: Version metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /skills/{namespace}/{name}/versions/{version}/skill-md:
+    get:
+      operationId: getSkillMarkdown
+      summary: Raw SKILL.md content of one published version
+      parameters:
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+        - $ref: "#/components/parameters/Version"
+      responses:
+        "200":
+          description: SKILL.md body
+          content:
+            text/markdown:
+              schema: { type: string }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      summary: Identity + portal role for the calling principal
+      responses:
+        "200":
+          description: User identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserIdentity"
+
+  /refresh:
+    post:
+      operationId: forceRefresh
+      summary: Force an immediate registry re-read (publisher+ role required)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Refresh complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  parameters:
+    Namespace:
+      in: path
+      name: namespace
+      required: true
+      schema: { type: string, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" }
+    Name:
+      in: path
+      name: name
+      required: true
+      schema: { type: string, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" }
+    Version:
+      in: path
+      name: version
+      required: true
+      schema: { type: string }
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Token valid but insufficient role
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SkillsPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SkillSummary" }
+        next_cursor:
+          type: [string, "null"]
+
+    SkillSummary:
+      type: object
+      required: [namespace, name, latest_version, latest_hash, scan_status]
+      properties:
+        namespace: { type: string }
+        name: { type: string }
+        description: { type: string }
+        owner_team: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        latest_version: { type: string }
+        latest_hash: { type: string }
+        scan_status: { type: string, enum: [pass, warn, fail, none] }
+
+    SkillManifest:
+      type: object
+      required: [namespace, name, latest, versions]
+      properties:
+        namespace: { type: string }
+        name: { type: string }
+        description: { type: string }
+        owner_team: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        latest: { type: string }
+        versions:
+          type: array
+          items: { $ref: "#/components/schemas/SkillVersion" }
+
+    SkillVersion:
+      type: object
+      required: [version, content_hash, published_at, scan_status]
+      properties:
+        version: { type: string }
+        content_hash: { type: string }
+        published_at: { type: string, format: date-time }
+        published_by: { type: string }
+        changelog_url: { type: string }
+        scan_status: { type: string, enum: [pass, warn, fail, none] }
+        signature: { type: string }
+        skill_md_url: { type: string, format: uri }
+
+    UserIdentity:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [anonymous, consumer, author, reviewer, publisher, admin]
+        sub: { type: string }
+        name: { type: string }
+        email: { type: string, format: email }
+        claims:
+          type: array
+          items: { type: string }
+
+    RefreshResult:
+      type: object
+      required: [refreshed_at, skill_count]
+      properties:
+        refreshed_at: { type: string, format: date-time }
+        skill_count: { type: integer }
+        index_version: { type: string }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        message: { type: string }
+        namespace: { type: string }
+        name: { type: string }
+        version: { type: string }

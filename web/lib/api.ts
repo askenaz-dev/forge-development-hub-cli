@@ -1,0 +1,171 @@
+/**
+ * Typed client for the FDH portal API.
+ *
+ * This is a hand-written facade. Future work (M5/M6 stretch) replaces it
+ * with a generated client from the OpenAPI spec at
+ * `../internal/portalapi/openapi.yaml` via `openapi-typescript`.
+ *
+ * Every function is server-friendly: it accepts an optional `fetch`
+ * implementation so server components can pass through `next: { revalidate }`
+ * caching hints if desired. Authenticated endpoints carry a bearer token
+ * via the `token` parameter; anonymous reads omit it.
+ */
+
+const BASE = process.env.FDH_API_BASE_URL ?? "http://localhost:8080";
+
+export interface SkillSummary {
+  namespace: string;
+  name: string;
+  description?: string;
+  owner_team?: string;
+  tags?: string[];
+  latest_version: string;
+  latest_hash: string;
+  scan_status: "pass" | "warn" | "fail" | "none";
+}
+
+export interface SkillVersion {
+  version: string;
+  content_hash: string;
+  published_at: string;
+  published_by?: string;
+  changelog_url?: string;
+  scan_status: "pass" | "warn" | "fail" | "none";
+  signature?: string;
+  skill_md_url: string;
+}
+
+export interface SkillManifest {
+  namespace: string;
+  name: string;
+  description: string;
+  owner_team?: string;
+  tags?: string[];
+  latest: string;
+  versions: SkillVersion[];
+}
+
+export interface UserIdentity {
+  role: "anonymous" | "consumer" | "author" | "reviewer" | "publisher" | "admin";
+  sub?: string;
+  name?: string;
+  email?: string;
+  claims?: string[];
+}
+
+export interface SkillsPage {
+  items: SkillSummary[];
+  next_cursor: string | null;
+}
+
+interface FetchOptions {
+  token?: string;
+  signal?: AbortSignal;
+  // next-cache hints; ignored in browser
+  revalidate?: number;
+}
+
+async function getJSON<T>(path: string, opts?: FetchOptions): Promise<T> {
+  const headers: HeadersInit = {};
+  if (opts?.token) headers["Authorization"] = `Bearer ${opts.token}`;
+
+  const res = await fetch(`${BASE}${path}`, {
+    headers,
+    signal: opts?.signal,
+    next: opts?.revalidate !== undefined ? { revalidate: opts.revalidate } : undefined,
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, await safeText(res));
+  }
+  return (await res.json()) as T;
+}
+
+async function getText(path: string, opts?: FetchOptions): Promise<string> {
+  const headers: HeadersInit = {};
+  if (opts?.token) headers["Authorization"] = `Bearer ${opts.token}`;
+  const res = await fetch(`${BASE}${path}`, {
+    headers,
+    signal: opts?.signal,
+    next: opts?.revalidate !== undefined ? { revalidate: opts.revalidate } : undefined,
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, await safeText(res));
+  }
+  return await res.text();
+}
+
+async function safeText(res: Response): Promise<string> {
+  try {
+    return await res.text();
+  } catch {
+    return "";
+  }
+}
+
+export class ApiError extends Error {
+  constructor(public status: number, public body: string) {
+    super(`api error ${status}: ${body}`);
+  }
+}
+
+// --- Endpoints ---
+
+export interface ListSkillsParams {
+  q?: string;
+  namespace?: string;
+  tag?: string;
+  scan_status?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export async function listSkills(
+  params: ListSkillsParams = {},
+  opts?: FetchOptions
+): Promise<SkillsPage> {
+  const q = new URLSearchParams();
+  if (params.q) q.set("q", params.q);
+  if (params.namespace) q.set("namespace", params.namespace);
+  if (params.tag) q.set("tag", params.tag);
+  if (params.scan_status) q.set("scan_status", params.scan_status);
+  if (params.limit) q.set("limit", String(params.limit));
+  if (params.cursor) q.set("cursor", params.cursor);
+  const query = q.toString();
+  return getJSON<SkillsPage>(`/api/v1/skills${query ? `?${query}` : ""}`, opts);
+}
+
+export async function getSkill(
+  namespace: string,
+  name: string,
+  opts?: FetchOptions
+): Promise<SkillManifest> {
+  return getJSON<SkillManifest>(`/api/v1/skills/${namespace}/${name}`, opts);
+}
+
+export async function getSkillVersion(
+  namespace: string,
+  name: string,
+  version: string,
+  opts?: FetchOptions
+): Promise<SkillVersion> {
+  return getJSON<SkillVersion>(
+    `/api/v1/skills/${namespace}/${name}/versions/${version}`,
+    opts
+  );
+}
+
+export async function getSkillMarkdown(
+  namespace: string,
+  name: string,
+  version: string,
+  opts?: FetchOptions
+): Promise<string> {
+  return getText(
+    `/api/v1/skills/${namespace}/${name}/versions/${version}/skill-md`,
+    opts
+  );
+}
+
+export async function getCurrentUser(opts?: FetchOptions): Promise<UserIdentity> {
+  return getJSON<UserIdentity>("/api/v1/auth/me", opts);
+}

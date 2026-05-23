@@ -1,0 +1,116 @@
+# Taskfile for fdh.
+# https://taskfile.dev
+#
+# We use Task (rather than Make) because it is a single static binary that runs
+# identically on macOS, Linux, and Windows. The pilot includes Windows
+# developers who otherwise would need msys2 or Git-for-Windows to use Make.
+# Install once with `go install github.com/go-task/task/v3/cmd/task@latest`
+# or download a binary from https://taskfile.dev/installation/.
+
+version: "3"
+
+vars:
+  BINARY: fdh
+  PKG: github.com/falabella/fdh
+  BIN_DIR: bin
+  DIST_DIR: dist
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo none
+  BUILD_DATE:
+    sh: git log -1 --format=%cI 2>/dev/null || echo unknown
+  LDFLAGS: >-
+    -s -w
+    -X main.version={{.VERSION}}
+    -X main.commit={{.COMMIT}}
+    -X main.buildDate={{.BUILD_DATE}}
+
+tasks:
+  default:
+    cmds:
+      - task --list-all
+    silent: true
+
+  build:
+    desc: Build the binary for the current host
+    cmds:
+      - go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN_DIR}}/{{.BINARY}}{{exeExt}} ./cmd/{{.BINARY}}
+
+  test:
+    desc: Run unit and integration tests
+    cmds:
+      - go test ./...
+
+  test-race:
+    desc: Run tests with the race detector
+    cmds:
+      - go test -race ./...
+
+  lint:
+    desc: Run golangci-lint over the codebase
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    desc: Format the codebase
+    cmds:
+      - gofmt -s -w .
+      - go mod tidy
+
+  e2e:
+    desc: Run end-to-end tests against the fixture registry
+    cmds:
+      - go test -tags=e2e ./...
+
+  release:
+    desc: Produce release tar.gz archives for all five target platforms
+    deps: [release-clean]
+    cmds:
+      - task: release-build
+        vars: {GOOS: darwin, GOARCH: arm64}
+      - task: release-build
+        vars: {GOOS: darwin, GOARCH: amd64}
+      - task: release-build
+        vars: {GOOS: linux, GOARCH: arm64}
+      - task: release-build
+        vars: {GOOS: linux, GOARCH: amd64}
+      - task: release-build
+        vars: {GOOS: windows, GOARCH: amd64}
+
+  release-clean:
+    desc: Remove old release artifacts
+    cmds:
+      - cmd: rm -rf {{.DIST_DIR}}
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -Command "if (Test-Path {{.DIST_DIR}}) { Remove-Item -Recurse -Force {{.DIST_DIR}} }"
+        platforms: [windows]
+
+  release-build:
+    desc: Internal — build one platform tar.gz + sha256
+    internal: true
+    requires:
+      vars: [GOOS, GOARCH]
+    vars:
+      EXT: '{{if eq .GOOS "windows"}}.exe{{end}}'
+      ARTIFACT_BASE: "{{.BINARY}}-{{.VERSION}}-{{.GOOS}}-{{.GOARCH}}"
+      ARTIFACT_DIR: "{{.DIST_DIR}}/{{.ARTIFACT_BASE}}"
+    env:
+      GOOS: "{{.GOOS}}"
+      GOARCH: "{{.GOARCH}}"
+      CGO_ENABLED: "0"
+    cmds:
+      - cmd: mkdir -p {{.ARTIFACT_DIR}}
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path {{.ARTIFACT_DIR}} | Out-Null"
+        platforms: [windows]
+      - go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.ARTIFACT_DIR}}/{{.BINARY}}{{.EXT}} ./cmd/{{.BINARY}}
+      - cmd: cp LICENSE README.md {{.ARTIFACT_DIR}}/
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -Command "Copy-Item LICENSE,README.md {{.ARTIFACT_DIR}}/"
+        platforms: [windows]
+      # tar + sha256 production lands in task 10.1/10.2 once goreleaser vs hand-rolled is decided.
+
+  ci:
+    desc: Composite CI gate — lint, build, test
+    deps: [lint, build, test]

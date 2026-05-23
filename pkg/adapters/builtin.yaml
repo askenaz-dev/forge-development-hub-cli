@@ -1,0 +1,83 @@
+# Embedded default adapter manifest.
+#
+# Each entry declares: id, display_name, detection probes, the user-scope
+# and project-scope directories the agent reads, and a source_doc_url
+# that points back to the upstream documentation we derived the paths from.
+#
+# When the upstream documentation changes, update verified_on and the paths
+# here, and bump the OpenSpec spec in agent-adapter-map.
+#
+# Adding a new agent: append a new entry. Do not change Go code.
+#
+# Path expansion rules:
+#   - Paths beginning with "~" are resolved against the user's home directory.
+#   - Other paths are interpreted relative to the project root for
+#     project-scope, or used as-is for absolute user-scope paths.
+#   - "<name>" is a literal placeholder substituted at install time with
+#     the skill's bundle directory name.
+
+agents:
+  - id: claude-code
+    display_name: Claude Code
+    source_doc_url: https://code.claude.com/docs/en/skills
+    verified_on: "2026-05-22"
+    detect:
+      - type: dir-exists
+        path: "~/.claude"
+      - type: exec-on-path
+        name: claude
+    paths:
+      user:
+        - "~/.claude/skills/<name>/"
+      project:
+        - ".claude/skills/<name>/"
+
+  - id: copilot
+    display_name: GitHub Copilot
+    source_doc_url: https://docs.github.com/en/copilot/concepts/agents/about-agent-skills
+    verified_on: "2026-05-22"
+    detect:
+      - type: dir-exists
+        path: ".github"
+      - type: exec-on-path
+        name: gh
+    paths:
+      user:
+        - "~/.copilot/skills/<name>/"
+        - "~/.agents/skills/<name>/"
+      project:
+        - ".github/skills/<name>/"
+        - ".claude/skills/<name>/"
+        - ".agents/skills/<name>/"
+
+  - id: codex
+    display_name: OpenAI Codex
+    source_doc_url: https://developers.openai.com/codex/skills/
+    verified_on: "2026-05-22"
+    detect:
+      - type: exec-on-path
+        name: codex
+      - type: dir-exists
+        path: "~/.agents"
+    paths:
+      user:
+        - "~/.agents/skills/<name>/"
+      project:
+        - ".agents/skills/<name>/"
+
+  - id: opencode
+    display_name: OpenCode
+    source_doc_url: https://opencode.ai/docs/skills/
+    verified_on: "2026-05-22"
+    detect:
+      - type: exec-on-path
+        name: opencode
+      - type: dir-exists
+        path: "~/.config/opencode"
+    paths:
+      user:
+        - "~/.agents/skills/<name>/"
+        - "~/.claude/skills/<name>/"
+      project:
+        - ".agents/skills/<name>/"
+        - ".claude/skills/<name>/"

@@ -1,0 +1,12 @@
+# Exclude host artifacts from the Docker build context so the image's
+# npm-installed node_modules isn't shadowed by the host's pnpm-installed
+# one (which uses a different on-disk layout).
+
+node_modules
+.next
+.git
+.env.local
+.env.*.local
+**/*.log
+README.md
+.DS_Store

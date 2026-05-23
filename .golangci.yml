@@ -1,0 +1,63 @@
+# golangci-lint configuration for fdh.
+# https://golangci-lint.run/usage/configuration/
+#
+# Ruleset is strict-but-pragmatic per task 1.6 of the installer-core change.
+# The goal is to catch real bugs and style drift without drowning authors in
+# noise; rules with high false-positive rates are intentionally disabled.
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    # Correctness
+    - govet            # reports suspicious constructs
+    - staticcheck      # comprehensive static analysis
+    - errcheck         # unchecked errors are a top bug source
+    - ineffassign      # ineffective assignments
+    - typecheck        # baseline type checking (implicit but explicit here for clarity)
+    # Style and consistency
+    - gofmt            # canonical formatting
+    - goimports        # import ordering + grouping
+    - gosimple         # simplifications staticcheck doesn't always flag
+    - unused           # unused declarations
+    - misspell         # English spelling
+    # Targeted bug catchers
+    - bodyclose        # HTTP response bodies must be closed
+    - rowserrcheck     # database/sql rows.Err()
+    - sqlclosecheck    # database/sql Close()
+    - errorlint        # errors.Is / errors.As correctness
+    - nilerr           # returning nil after detecting a non-nil error
+
+linters-settings:
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment # micro-optimization noise; opt in per-package if needed
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  goimports:
+    local-prefixes: github.com/falabella/fdh
+  misspell:
+    locale: US
+  staticcheck:
+    checks: ["all"]
+
+issues:
+  # Default golangci-lint hides issues already-fixed-by-master-branch; we want
+  # to see all issues in the current diff.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  # Reasonable test-file exceptions: tests sometimes legitimately ignore errors
+  # in setup code and use long functions for table-driven cases.
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - errorlint
+    - path: internal/testutil/
+      linters:
+        - errcheck

@@ -1,0 +1,12 @@
+# Role mapping consumed by fdh-portal-api in local dev.
+#
+# Claim values come from Keycloak's `groups` claim (configured in the
+# realm import). Values map to portal roles. Unmapped users default to
+# `consumer` after authentication.
+
+claim: groups
+map:
+  fdh-admins: admin
+  fdh-publishers: publisher
+  fdh-reviewers: reviewer
+  fdh-authors: author

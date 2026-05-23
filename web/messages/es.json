@@ -1,0 +1,47 @@
+{
+  "nav": {
+    "skills": "Skills",
+    "install": "Instalar CLI",
+    "getStarted": "Empezar",
+    "signIn": "Iniciar sesión"
+  },
+  "landing": {
+    "headline": "El hub de skills para tus agentes de desarrollo",
+    "subhead": "Falabella Development Hub centraliza, gobierna y distribuye Agent Skills para Claude Code, GitHub Copilot, OpenAI Codex y OpenCode.",
+    "ctaInstall": "Instalar el CLI",
+    "ctaBrowse": "Explorar skills",
+    "ctaSignIn": "Iniciar sesión",
+    "feature1Title": "Multi-agente",
+    "feature1Body": "Un solo registry, cuatro agentes. Instala un skill y aparece en todas las herramientas que usás.",
+    "feature2Title": "Gobernado",
+    "feature2Body": "Identidad de Falabella vía Keycloak. Roles, auditoría y aprobaciones por equipo.",
+    "feature3Title": "Spec compliant",
+    "feature3Body": "Skills 100% portables siguiendo el estándar abierto agentskills.io."
+  },
+  "install": {
+    "title": "Instalar el CLI fdh",
+    "intro": "Descarga el binario para tu plataforma, verifica el checksum y ponlo en tu PATH.",
+    "verifyHeading": "Verificar el checksum",
+    "verifyHint": "Antes de extraer, ejecuta el comando de verificación para confirmar la integridad del archivo.",
+    "tabMac": "macOS",
+    "tabLinux": "Linux",
+    "tabWindows": "Windows"
+  },
+  "browse": {
+    "title": "Catálogo de skills",
+    "searchPlaceholder": "Buscar skills por nombre, namespace o tag",
+    "empty": "No se encontraron skills para esa búsqueda."
+  },
+  "skillDetail": {
+    "installCommand": "Comando de instalación",
+    "copied": "¡Copiado!",
+    "versionHistory": "Historial de versiones",
+    "ownerTeam": "Equipo dueño",
+    "scanStatus": "Estado del scan",
+    "perAgent": "Variantes por agente"
+  },
+  "common": {
+    "loading": "Cargando…",
+    "error": "Algo salió mal."
+  }
+}

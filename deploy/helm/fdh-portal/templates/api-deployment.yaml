@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fdh-portal.api.name" . }}
+  labels:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fdh-portal.labels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "fdh-portal.labels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+      annotations:
+        # Roll the pods when the role-map ConfigMap changes.
+        checksum/role-map: {{ .Values.oidc.roleMapConfigMap | sha256sum }}
+    spec:
+      containers:
+        - name: api
+          image: {{ include "fdh-portal.api.image" . | quote }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: FDH_PORTAL_API_ADDR
+              value: ":8080"
+            - name: FDH_PORTAL_REGISTRY_URL
+              value: {{ .Values.portal.registryURL | quote }}
+            - name: FDH_PORTAL_REGISTRY_BRANCH
+              value: {{ .Values.portal.registryBranch | quote }}
+            - name: FDH_PORTAL_REFRESH_INTERVAL
+              value: {{ .Values.portal.refreshInterval | quote }}
+            - name: FDH_PORTAL_REGISTRY_LOCAL_PATH
+              value: /var/fdh/registry
+            - name: OIDC_DISCOVERY_URL
+              value: {{ .Values.oidc.discoveryURL | quote }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.oidc.clientID | quote }}
+            - name: OIDC_ROLE_MAP_PATH
+              value: /config/role-map.yaml
+            {{- if .Values.observability.otel.endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.observability.otel.endpoint | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: role-map
+              mountPath: /config
+            - name: registry-cache
+              mountPath: /var/fdh/registry
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+      volumes:
+        - name: role-map
+          configMap:
+            name: {{ .Values.oidc.roleMapConfigMap }}
+        - name: registry-cache
+          emptyDir: {}

@@ -1,0 +1,134 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override version string (e.g. v0.1.0-rc.1)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.goos }}-${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: darwin,  goarch: arm64 }
+          - { goos: darwin,  goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: linux,   goarch: amd64 }
+          - { goos: windows, goarch: amd64, ext: .exe }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=v0.0.0-$(date -u +%Y%m%d)-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build fdh (primary)
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        shell: bash
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          OUT_DIR="dist/fdh-${VERSION}-${GOOS}-${GOARCH}"
+          mkdir -p "$OUT_DIR"
+          go build \
+            -trimpath \
+            -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${GITHUB_SHA} -X main.buildDate=$(date -u +%FT%TZ)" \
+            -o "${OUT_DIR}/fdh${{ matrix.ext }}" \
+            ./cmd/fdh
+          cp LICENSE README.md "${OUT_DIR}/"
+          tar -czvf "dist/fdh-${VERSION}-${GOOS}-${GOARCH}.tar.gz" -C dist "fdh-${VERSION}-${GOOS}-${GOARCH}"
+          ( cd dist && sha256sum "fdh-${VERSION}-${GOOS}-${GOARCH}.tar.gz" > "fdh-${VERSION}-${GOOS}-${GOARCH}.tar.gz.sha256" )
+
+      - name: Build falabella-installer stub (back-compat, 90-day sunset)
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        shell: bash
+        run: |
+          # This stub binary is published for 90 days after the fdh rename
+          # so existing pilot users' scripts keep working. It prints a
+          # deprecation notice and forwards to `fdh` on PATH.
+          # Sunset date: see docs/release.md
+          VERSION="${{ steps.ver.outputs.version }}"
+          OUT_DIR="dist/falabella-installer-${VERSION}-${GOOS}-${GOARCH}"
+          mkdir -p "$OUT_DIR"
+          go build \
+            -trimpath \
+            -ldflags "-s -w" \
+            -o "${OUT_DIR}/falabella-installer${{ matrix.ext }}" \
+            ./cmd/falabella-installer-stub
+          cp LICENSE "${OUT_DIR}/"
+          cat > "${OUT_DIR}/README.md" <<'EOF'
+          # falabella-installer (deprecated stub)
+
+          This binary is a 90-day back-compat shim for the renamed `fdh` CLI.
+          Install `fdh` from the internal package manager and update your scripts.
+          EOF
+          tar -czvf "dist/falabella-installer-${VERSION}-${GOOS}-${GOARCH}.tar.gz" -C dist "falabella-installer-${VERSION}-${GOOS}-${GOARCH}"
+          ( cd dist && sha256sum "falabella-installer-${VERSION}-${GOOS}-${GOARCH}.tar.gz" > "falabella-installer-${VERSION}-${GOOS}-${GOARCH}.tar.gz.sha256" )
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.ver.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+
+  publish-package-manager:
+    name: publish to internal package manager
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Publish (placeholder)
+        env:
+          PKG_BASE_URL: ${{ vars.PKG_BASE_URL }}
+          PKG_TOKEN: ${{ secrets.PKG_TOKEN }}
+        run: |
+          # Placeholder for the actual upload step. The build pipeline produces
+          # standard tar.gz + sha256 artifacts that any of Nexus, JFrog
+          # Artifactory, or GitHub Packages can host. Wire the upload here
+          # once the ops team confirms the package manager selection.
+          # Example for Nexus raw repo:
+          #   for f in dist/*.tar.gz dist/*.sha256; do
+          #     curl -fsSL --user "$PKG_TOKEN" --upload-file "$f" \
+          #       "${PKG_BASE_URL}/fdh/$(basename "$f")"
+          #   done
+          echo "publish-target=${PKG_BASE_URL:-unset}"
+          ls -la dist/

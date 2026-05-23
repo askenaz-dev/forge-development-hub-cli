@@ -1,0 +1,85 @@
+# Default values for fdh-portal.
+#
+# Production deploys override:
+#   - image tags (api.image.tag, web.image.tag)
+#   - ingress.host (e.g. fdh.falabella.internal)
+#   - portal.registryURL (the production registry Git URL)
+#   - oidc.* (the production Keycloak)
+#   - oidc.clientSecretRef (Kubernetes Secret name + key)
+
+api:
+  replicaCount: 2
+  image:
+    repository: pkg.falabella.internal/fdh/fdh-portal-api
+    tag: ""           # empty -> chart appVersion
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+web:
+  replicaCount: 2
+  image:
+    repository: pkg.falabella.internal/fdh/fdh-portal-web
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+portal:
+  # Git remote URL of the production skill registry. The API clones this
+  # into an emptyDir at startup and refreshes every refreshInterval.
+  registryURL: "https://git.falabella.internal/skills/registry.git"
+  registryBranch: "main"
+  refreshInterval: "60s"
+
+oidc:
+  # Full discovery URL — Keycloak realm endpoint.
+  discoveryURL: "https://keycloak.falabella.internal/realms/fdh"
+  clientID: "fdh-portal"
+  # Reference a Kubernetes Secret holding the client secret. The chart
+  # does NOT embed the secret value. Create the secret separately, e.g.:
+  #   kubectl create secret generic fdh-portal-oidc --from-literal=client_secret=...
+  clientSecretRef:
+    name: "fdh-portal-oidc"
+    key: "client_secret"
+  # The role-map ConfigMap is also referenced rather than embedded.
+  roleMapConfigMap: "fdh-portal-role-map"
+
+observability:
+  prometheus:
+    serviceMonitor: true
+    interval: 30s
+  otel:
+    endpoint: ""    # e.g. http://otel-collector.observability:4317
+
+ingress:
+  enabled: true
+  className: "nginx"
+  host: "fdh.falabella.internal"
+  tls:
+    enabled: true
+    secretName: "fdh-portal-tls"
+  annotations: {}
+
+service:
+  type: ClusterIP

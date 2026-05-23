@@ -1,0 +1,17 @@
+{{- if .Values.observability.prometheus.serviceMonitor }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "fdh-portal.api.name" . }}
+  labels:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "fdh-portal.labels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.observability.prometheus.interval }}
+{{- end }}

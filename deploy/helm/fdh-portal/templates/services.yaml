@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fdh-portal.api.name" . }}
+  labels:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fdh-portal.web.name" . }}
+  labels:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+  selector:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web

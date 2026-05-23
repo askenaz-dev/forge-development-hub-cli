@@ -1,0 +1,110 @@
+# Local development stack for the FDH portal.
+#
+# Usage:
+#   docker compose up        # boots Keycloak + API + Web + fixture registry
+#   docker compose down -v   # tears down + removes volumes
+#
+# Services bound to localhost:
+#   http://localhost:3000    portal web (Next.js)
+#   http://localhost:8080    portal API (Go)
+#   http://localhost:18088    Keycloak (admin: admin / admin)
+#
+# Sign-in flow in dev:
+#   1. Open http://localhost:3000
+#   2. Click "Sign in"
+#   3. Auth.js redirects to Keycloak at localhost:18088
+#   4. Use one of the seeded test users (see keycloak/realm-fdh.json):
+#      - admin@fdh.local / admin       (group fdh-admins)
+#      - author@fdh.local / author     (group fdh-authors)
+#      - consumer@fdh.local / consumer (no groups)
+#   5. Callback lands you back on the portal as the chosen user.
+
+services:
+  fixture-registry:
+    # Builds the spec-compliant fixture registry into a shared volume.
+    # The container exits after building; API + Web read the mounted
+    # directory directly.
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM golang:1.25-alpine
+        WORKDIR /src
+        COPY . .
+        RUN go build -o /usr/local/bin/build-fixture-registry ./scripts/build-fixture-registry
+        ENTRYPOINT ["/usr/local/bin/build-fixture-registry", "/registry"]
+    volumes:
+      - registry-data:/registry
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    depends_on:
+      fixture-registry:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+    environment:
+      FDH_PORTAL_API_ADDR: ":8080"
+      FDH_PORTAL_REGISTRY_LOCAL_PATH: /registry
+      FDH_PORTAL_REFRESH_INTERVAL: 60s
+      # OIDC validation is disabled in local-dev. The Keycloak issuer
+      # claim disagrees between the Docker network view (keycloak:8080)
+      # and the host browser's view (localhost:18088); fixing it needs
+      # a reverse proxy that fronts Keycloak with one hostname. Until
+      # then anonymous browsing works against the dockerized API and
+      # the Keycloak container itself is exercised by the web's sign-in
+      # flow. Set OIDC_DISCOVERY_URL to enable validation later.
+      # OIDC_DISCOVERY_URL: http://keycloak:8080/realms/fdh-dev
+      # OIDC_CLIENT_ID: fdh-portal
+      OIDC_ROLE_MAP_PATH: /config/role-map.yaml
+    volumes:
+      - registry-data:/registry:ro
+      - ./compose/api/role-map.yaml:/config/role-map.yaml:ro
+    ports:
+      - "28080:8080"
+
+  web:
+    build:
+      context: ./web
+    depends_on:
+      api:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+    environment:
+      # The browser hits Keycloak directly on the host; Auth.js' server side
+      # also runs inside this container and reaches Keycloak via the
+      # docker-network alias `keycloak`. The two URLs differ on purpose.
+      AUTH_SECRET: "dev-secret-please-change-me-32bytes-or-more"
+      AUTH_KEYCLOAK_ID: fdh-portal
+      AUTH_KEYCLOAK_SECRET: dev-secret
+      AUTH_KEYCLOAK_ISSUER: http://localhost:18088/realms/fdh-dev
+      AUTH_TRUST_HOST: "true"
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      FDH_API_BASE_URL: http://api:8080
+    ports:
+      - "3000:3000"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: "18088"
+    volumes:
+      - ./compose/keycloak:/opt/keycloak/data/import:ro
+    ports:
+      - "18088:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /realms/master HTTP/1.1\\r\\nhost: localhost\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  registry-data:
