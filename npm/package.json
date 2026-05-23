@@ -1,0 +1,37 @@
+{
+  "name": "@falabella/fdh",
+  "version": "0.0.0",
+  "description": "Falabella Development Hub CLI — npm wrapper for the Go binary. Zero runtime dependencies.",
+  "homepage": "https://github.com/falabella/fdh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/falabella/fdh.git",
+    "directory": "npm"
+  },
+  "license": "UNLICENSED",
+  "private": false,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "fdh": "./dist/cli.js",
+    "falabella-installer": "./dist/cli-alias.js"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/post-build-fixup.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "postinstall": "node ./dist/postinstall.js || (echo 'fdh: postinstall failed — see error above' && exit 1)",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

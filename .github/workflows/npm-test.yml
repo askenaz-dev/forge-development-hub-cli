@@ -1,0 +1,114 @@
+name: npm wrapper tests
+
+# Tests the @falabella/fdh npm wrapper on the cross-product of:
+#   3 package managers × 3 OS × 1 Node LTS (18)  =  9 jobs
+#
+# We run on:
+#   - Pull requests touching npm/, .github/workflows/npm-test.yml, or scripts/
+#   - Pushes to main touching the same paths
+#
+# The cross-package-manager matrix protects against subtle differences in
+# how npm/pnpm/yarn invoke postinstall scripts and resolve `bin` entries.
+#
+# What is NOT covered here:
+#   - End-to-end install from the real Artifactory registry (deferred, needs
+#     internal registry to exist + credentials in the runner).
+#   - The Go binary itself (covered by the regular ci.yml).
+
+on:
+  pull_request:
+    paths:
+      - "npm/**"
+      - ".github/workflows/npm-test.yml"
+  push:
+    branches: [main]
+    paths:
+      - "npm/**"
+      - ".github/workflows/npm-test.yml"
+
+jobs:
+  unit-and-build:
+    name: ${{ matrix.os }} · ${{ matrix.pm }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        pm: [npm, pnpm, yarn]
+    defaults:
+      run:
+        working-directory: ./npm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Setup pnpm
+        if: matrix.pm == 'pnpm'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Yarn
+        if: matrix.pm == 'yarn'
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+        shell: bash
+
+      # Install dev deps WITHOUT running postinstall (which would try to fetch
+      # a real binary that hasn't been published yet during CI of the wrapper).
+      - name: Install dev deps (npm)
+        if: matrix.pm == 'npm'
+        run: npm install --ignore-scripts
+
+      - name: Install dev deps (pnpm)
+        if: matrix.pm == 'pnpm'
+        run: pnpm install --ignore-scripts
+
+      - name: Install dev deps (yarn)
+        if: matrix.pm == 'yarn'
+        run: yarn install --ignore-scripts
+        env:
+          # yarn classic doesn't honor --ignore-scripts the same way; set env
+          # to skip lifecycle scripts just in case.
+          npm_config_ignore_scripts: "true"
+
+      - name: TypeScript build
+        run: |
+          ${{ matrix.pm == 'yarn' && 'yarn' || matrix.pm }} run build
+
+      - name: Unit tests (vitest)
+        run: |
+          ${{ matrix.pm == 'yarn' && 'yarn' || matrix.pm }} test
+
+      - name: Verify bin shebang + exec bit (unix only)
+        if: runner.os != 'Windows'
+        run: |
+          set -e
+          for f in dist/cli.js dist/cli-alias.js dist/postinstall.js; do
+            head -1 "$f" | grep -q '^#!/usr/bin/env node' || { echo "missing shebang in $f"; exit 1; }
+            test -x "$f" || { echo "missing exec bit on $f"; exit 1; }
+          done
+          echo "bin files look good"
+        shell: bash
+
+      - name: Verify postinstall can be invoked (FDH_SKIP_POSTINSTALL)
+        run: |
+          node dist/postinstall.js
+        env:
+          FDH_SKIP_POSTINSTALL: "1"
+        shell: bash
+
+      - name: Detect package manager via wrapper helpers
+        run: |
+          node -e "import('./dist/lib.js').then(m => { const pm = m.detectPackageManager(process.env); if (pm === 'unknown') { console.error('expected to detect ${{ matrix.pm }} but got unknown; user-agent:', process.env.npm_config_user_agent); process.exit(1); } console.log('detected:', pm); })"
+        shell: bash
+        env:
+          # Force a user-agent so the detection has something to work with even
+          # if the install step didn't propagate it.
+          npm_config_user_agent: "${{ matrix.pm }}/test (test env)"

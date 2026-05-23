@@ -1,5 +1,12 @@
 name: release
 
+# Triggered by a semver tag push (v0.5.2, v1.0.0-rc.1, etc.). The pipeline
+# runs goreleaser, uploads the artifacts to the internal package manager,
+# and refreshes the manifest.json that scripts/install.sh + install.ps1
+# point at.
+#
+# workflow_dispatch lets ops re-run a release (or snapshot a build) without
+# pushing a tag.
 on:
   push:
     tags:
@@ -14,21 +21,16 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: build (${{ matrix.goos }}-${{ matrix.goarch }})
+  goreleaser:
+    name: build artifacts (goreleaser)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { goos: darwin,  goarch: arm64 }
-          - { goos: darwin,  goarch: amd64 }
-          - { goos: linux,   goarch: arm64 }
-          - { goos: linux,   goarch: amd64 }
-          - { goos: windows, goarch: amd64, ext: .exe }
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # goreleaser needs full history for changelog
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -48,65 +50,38 @@ jobs:
             echo "version=v0.0.0-$(date -u +%Y%m%d)-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build fdh (primary)
+      - name: Run goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          # `release --clean` is the production mode; for dispatch runs
+          # we pass `--snapshot --skip=publish` to build artifacts without
+          # touching remote repos.
+          args: >-
+            ${{ startsWith(github.ref, 'refs/tags/') && 'release --clean'
+                || 'release --clean --snapshot --skip=publish' }}
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-        shell: bash
-        run: |
-          VERSION="${{ steps.ver.outputs.version }}"
-          OUT_DIR="dist/fdh-${VERSION}-${GOOS}-${GOARCH}"
-          mkdir -p "$OUT_DIR"
-          go build \
-            -trimpath \
-            -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${GITHUB_SHA} -X main.buildDate=$(date -u +%FT%TZ)" \
-            -o "${OUT_DIR}/fdh${{ matrix.ext }}" \
-            ./cmd/fdh
-          cp LICENSE README.md "${OUT_DIR}/"
-          tar -czvf "dist/fdh-${VERSION}-${GOOS}-${GOARCH}.tar.gz" -C dist "fdh-${VERSION}-${GOOS}-${GOARCH}"
-          ( cd dist && sha256sum "fdh-${VERSION}-${GOOS}-${GOARCH}.tar.gz" > "fdh-${VERSION}-${GOOS}-${GOARCH}.tar.gz.sha256" )
+          # goreleaser-action sets GITHUB_TOKEN automatically; the tap
+          # tokens are project-level secrets created when the internal
+          # tap/winget repos are confirmed (task 1.4).
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          WINGET_TAP_TOKEN: ${{ secrets.WINGET_TAP_TOKEN }}
 
-      - name: Build falabella-installer stub (back-compat, 90-day sunset)
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-        shell: bash
-        run: |
-          # This stub binary is published for 90 days after the fdh rename
-          # so existing pilot users' scripts keep working. It prints a
-          # deprecation notice and forwards to `fdh` on PATH.
-          # Sunset date: see docs/release.md
-          VERSION="${{ steps.ver.outputs.version }}"
-          OUT_DIR="dist/falabella-installer-${VERSION}-${GOOS}-${GOARCH}"
-          mkdir -p "$OUT_DIR"
-          go build \
-            -trimpath \
-            -ldflags "-s -w" \
-            -o "${OUT_DIR}/falabella-installer${{ matrix.ext }}" \
-            ./cmd/falabella-installer-stub
-          cp LICENSE "${OUT_DIR}/"
-          cat > "${OUT_DIR}/README.md" <<'EOF'
-          # falabella-installer (deprecated stub)
-
-          This binary is a 90-day back-compat shim for the renamed `fdh` CLI.
-          Install `fdh` from the internal package manager and update your scripts.
-          EOF
-          tar -czvf "dist/falabella-installer-${VERSION}-${GOOS}-${GOARCH}.tar.gz" -C dist "falabella-installer-${VERSION}-${GOOS}-${GOARCH}"
-          ( cd dist && sha256sum "falabella-installer-${VERSION}-${GOOS}-${GOARCH}.tar.gz" > "falabella-installer-${VERSION}-${GOOS}-${GOARCH}.tar.gz.sha256" )
-
-      - name: Upload artifacts
+      - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ steps.ver.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: dist-${{ steps.ver.outputs.version }}
           path: |
             dist/*.tar.gz
+            dist/*.zip
             dist/*.sha256
+            dist/*.deb
+            dist/*.rpm
 
-  publish-package-manager:
+  publish:
     name: publish to internal package manager
-    needs: build
+    needs: goreleaser
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -116,19 +91,164 @@ jobs:
           path: dist/
           merge-multiple: true
 
-      - name: Publish (placeholder)
+      # Upload binaries FIRST, manifest.json LAST. If the binary upload
+      # fails partway, the manifest still points at the previous good
+      # release and install.sh keeps working. The manifest write is the
+      # atomic switch.
+      - name: Publish binaries
         env:
           PKG_BASE_URL: ${{ vars.PKG_BASE_URL }}
           PKG_TOKEN: ${{ secrets.PKG_TOKEN }}
+          VERSION: ${{ needs.goreleaser.outputs.version }}
         run: |
-          # Placeholder for the actual upload step. The build pipeline produces
-          # standard tar.gz + sha256 artifacts that any of Nexus, JFrog
-          # Artifactory, or GitHub Packages can host. Wire the upload here
-          # once the ops team confirms the package manager selection.
-          # Example for Nexus raw repo:
-          #   for f in dist/*.tar.gz dist/*.sha256; do
-          #     curl -fsSL --user "$PKG_TOKEN" --upload-file "$f" \
-          #       "${PKG_BASE_URL}/fdh/$(basename "$f")"
-          #   done
-          echo "publish-target=${PKG_BASE_URL:-unset}"
-          ls -la dist/
+          set -euo pipefail
+          if [[ -z "${PKG_BASE_URL:-}" ]]; then
+            echo "PKG_BASE_URL not set; skipping publish (will be wired when host confirmed)."
+            ls -la dist/
+            exit 0
+          fi
+          for f in dist/*.tar.gz dist/*.zip dist/*.sha256 dist/*.deb dist/*.rpm; do
+            [[ -f "$f" ]] || continue
+            base="$(basename "$f")"
+            curl -fsSL --user "$PKG_TOKEN" --upload-file "$f" \
+              "${PKG_BASE_URL}/fdh/${VERSION}/${base}"
+            echo "uploaded $base"
+          done
+
+      - name: Refresh manifest.json (atomic)
+        env:
+          PKG_BASE_URL: ${{ vars.PKG_BASE_URL }}
+          PKG_TOKEN: ${{ secrets.PKG_TOKEN }}
+          VERSION: ${{ needs.goreleaser.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PKG_BASE_URL:-}" ]]; then
+            echo "PKG_BASE_URL not set; skipping manifest refresh."
+            exit 0
+          fi
+
+          # Pull the existing manifest, append/update this version, push it
+          # back as the final atomic step. The publisher uses the
+          # convention:
+          #   {
+          #     "latest": "<vX.Y.Z>",
+          #     "versions": {
+          #       "<vX.Y.Z>": {
+          #         "<os>_<arch>": { "url": "...", "sha256": "..." }, ...
+          #       }, ...
+          #     }
+          #   }
+          tmp="$(mktemp)"
+          curl -fsSL "${PKG_BASE_URL}/fdh/manifest.json" -o "$tmp" \
+            || echo '{"versions":{}}' > "$tmp"
+
+          # Build the per-(os,arch) entries for this version.
+          python3 - <<'PY' "$tmp" "$VERSION" dist/
+          import hashlib, json, os, sys
+          manifest_path, version, dist = sys.argv[1:]
+          with open(manifest_path) as f:
+              try:
+                  m = json.load(f)
+              except json.JSONDecodeError:
+                  m = {"versions": {}}
+          if "versions" not in m:
+              m["versions"] = {}
+          entries = {}
+          for fn in sorted(os.listdir(dist)):
+              if not (fn.endswith(".tar.gz") or fn.endswith(".zip")):
+                  continue
+              # fdh_<version>_<os>_<arch>.<ext>
+              stem = fn.rsplit(".", 2 if fn.endswith(".tar.gz") else 1)[0]
+              parts = stem.split("_")
+              if len(parts) != 4 or parts[0] != "fdh":
+                  continue
+              _, ver, osname, arch = parts
+              if ver != version:
+                  continue
+              sha_path = os.path.join(dist, fn + ".sha256")
+              with open(sha_path) as sf:
+                  sha = sf.read().strip().split()[0]
+              entries[f"{osname}_{arch}"] = {
+                  "url":    f"fdh/{version}/{fn}",
+                  "sha256": sha,
+              }
+          m["versions"][version] = entries
+          m["latest"] = version
+          with open(manifest_path, "w") as f:
+              json.dump(m, f, indent=2, sort_keys=True)
+          PY
+
+          curl -fsSL --user "$PKG_TOKEN" --upload-file "$tmp" \
+            "${PKG_BASE_URL}/fdh/manifest.json"
+          echo "manifest.json refreshed to point at $VERSION"
+
+  publish-npm:
+    name: publish @falabella/fdh to internal npm registry
+    needs: [goreleaser, publish]
+    runs-on: ubuntu-latest
+    # Only on real tag pushes (skip workflow_dispatch / snapshot builds).
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ./npm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install dev deps (no postinstall)
+        run: npm install --ignore-scripts
+
+      - name: Build (tsc + shebang fixup)
+        run: npm run build
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Set npm package version to match Go binary
+        env:
+          VERSION: ${{ needs.goreleaser.outputs.version }}
+        run: |
+          # Strip leading v: v0.7.2 -> 0.7.2 (npm semver doesn't accept the v)
+          npm_ver="${VERSION#v}"
+          # --no-git-tag-version: don't commit; --allow-same-version: idempotent on re-runs.
+          npm version "$npm_ver" --no-git-tag-version --allow-same-version
+          echo "set @falabella/fdh version to $npm_ver"
+
+      - name: Configure registry auth
+        env:
+          NPM_INTERNAL_REGISTRY: ${{ vars.NPM_INTERNAL_REGISTRY }}
+          NPM_INTERNAL_TOKEN: ${{ secrets.NPM_INTERNAL_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NPM_INTERNAL_REGISTRY:-}" ]]; then
+            echo "NPM_INTERNAL_REGISTRY not set; skipping registry auth (will fall through to dry-run)."
+            exit 0
+          fi
+          # Strip protocol for the auth URL (npm convention).
+          reg_host="${NPM_INTERNAL_REGISTRY#https://}"
+          reg_host="${reg_host#http://}"
+          {
+            echo "@falabella:registry=${NPM_INTERNAL_REGISTRY}"
+            echo "//${reg_host}/:_authToken=${NPM_INTERNAL_TOKEN}"
+            echo "always-auth=true"
+          } > ~/.npmrc
+          echo "npmrc configured for ${NPM_INTERNAL_REGISTRY}"
+
+      - name: Publish to internal registry (or dry-run if not configured yet)
+        env:
+          NPM_INTERNAL_REGISTRY: ${{ vars.NPM_INTERNAL_REGISTRY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NPM_INTERNAL_REGISTRY:-}" ]]; then
+            echo "NPM_INTERNAL_REGISTRY not set; running 'npm publish --dry-run' instead."
+            npm publish --dry-run
+          else
+            npm publish --access restricted
+          fi
+          echo "publish step finished"

@@ -15,6 +15,16 @@ coverage.html
 profile.out
 
 # -----------------------------------------------------------------------------
+# npm wrapper (npm/) build artifacts
+# -----------------------------------------------------------------------------
+# Source is TypeScript under npm/src/; tsc compiles to npm/dist/ which we
+# don't track — it's regenerated on every `npm run build`. The published
+# tarball contains npm/dist/ (via package.json "files" allowlist).
+npm/dist/
+npm/coverage/
+npm/.vitest/
+
+# -----------------------------------------------------------------------------
 # Node / Next.js (web/)
 # -----------------------------------------------------------------------------
 node_modules/

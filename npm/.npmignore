@@ -1,0 +1,27 @@
+# What ships in the published @falabella/fdh tarball is controlled by
+# `package.json` "files" (allowlist). This .npmignore is a belt-and-suspenders
+# in case "files" is removed or misconfigured.
+
+# Source + config — only compiled JS in dist/ should ship.
+src/
+tests/
+scripts/
+tsconfig.json
+vitest.config.ts
+.npmignore
+
+# Build state
+node_modules/
+*.log
+
+# CI / editor
+.github/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Test results
+coverage/
+.vitest/
