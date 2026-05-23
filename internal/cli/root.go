@@ -44,11 +44,16 @@ func newRootCmd(info BuildInfo) *cobra.Command {
 		return initConfig(cmd)
 	}
 
+	root.AddCommand(newInitCmd(info))
 	root.AddCommand(newInstallCmd(info))
 	root.AddCommand(newListCmd(info))
 	root.AddCommand(newDoctorCmd(info))
 	root.AddCommand(newSearchCmd(info))
 	root.AddCommand(newConfigCmd(info))
+	root.AddCommand(newValidateRegistryCmd(info))
+	root.AddCommand(newUpdateCmd(info))
+	root.AddCommand(newInstinctCmd(info))
+	root.AddCommand(newEvolveCmd())
 
 	return root
 }
