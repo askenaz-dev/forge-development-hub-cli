@@ -43,7 +43,7 @@ type SkillMeta struct {
 	Signature        string   `yaml:"signature,omitempty"`
 }
 
-// WriteSidecar serialises meta to <dir>/.skill-meta.yaml. The file is
+// WriteSidecar serializes meta to <dir>/.skill-meta.yaml. The file is
 // rewritten on each install (idempotent for the same content).
 func WriteSidecar(dir string, meta SkillMeta) error {
 	if meta.SchemaVersion == 0 {

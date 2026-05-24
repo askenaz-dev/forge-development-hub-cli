@@ -6,9 +6,10 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/forge/fdh/pkg/bundle"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/pkg/bundle"
 )
 
 const validSkillMD = `---
@@ -195,8 +196,8 @@ func TestHash_HiddenFilesExcluded(t *testing.T) {
 	// part of the source bundle. Load + Hash must ignore dotfiles so an
 	// installed directory hashes identically to its source bundle.
 	root := writeBundle(t, map[string]string{
-		"my-skill/SKILL.md":          validSkillMD,
-		"my-skill/.skill-meta.yaml":  "schema_version: 1\n",
+		"my-skill/SKILL.md":         validSkillMD,
+		"my-skill/.skill-meta.yaml": "schema_version: 1\n",
 	})
 	b, err := bundle.Load(filepath.Join(root, "my-skill"))
 	require.NoError(t, err)

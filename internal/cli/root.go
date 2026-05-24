@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -95,7 +96,8 @@ func initConfig(cmd *cobra.Command) error {
 	}
 	// A missing config file is not an error — the CLI runs with defaults.
 	if err := v.ReadInConfig(); err != nil {
-		if _, notFound := err.(viper.ConfigFileNotFoundError); !notFound {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if !errors.As(err, &configFileNotFoundError) {
 			return Errorf(ExitInvalidUsage, "config: %v", err)
 		}
 		// Fall back to the legacy `forge-installer` config directory

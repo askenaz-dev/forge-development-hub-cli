@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/forge/fdh/internal/portalapi/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/internal/portalapi/auth"
 )
 
 func TestRoleRank(t *testing.T) {

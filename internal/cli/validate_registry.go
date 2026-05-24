@@ -6,9 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/forge/fdh/pkg/hubregistry"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+
+	"github.com/forge/fdh/pkg/hubregistry"
 )
 
 // ValidateRegistryResult is the JSON shape emitted by

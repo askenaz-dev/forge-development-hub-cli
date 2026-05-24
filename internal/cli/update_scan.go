@@ -86,7 +86,7 @@ func adapterScopeRoot(a adapters.SkillAdapter, homeDir, projectRoot string, scop
 func scanScopeRoot(a adapters.SkillAdapter, root string) ([]InstalledSkill, error) {
 	info, err := os.Stat(root)
 	if err != nil || !info.IsDir() {
-		return nil, nil
+		return nil, nil //nolint:nilerr // missing scope root means "nothing installed"
 	}
 	if a.SupportsSubresources() {
 		return scanDirectoryRoot(a, root)

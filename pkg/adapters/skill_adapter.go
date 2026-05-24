@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// SkillAdapter is the per-ecosystem strategy for materialising a
+// SkillAdapter is the per-ecosystem strategy for materializing a
 // hub skill onto disk so the target AI agent reads it. There is
 // one implementation per agent (Claude Code, Codex, Copilot,
 // OpenCode); the consumer iterates `for skill in selected: for
@@ -30,7 +30,7 @@ type SkillAdapter interface {
 	Agent() string
 
 	// TargetPath returns the absolute on-disk path the skill's
-	// materialised form will live at. For directory-based agents
+	// materialized form will live at. For directory-based agents
 	// (Claude, Codex) this is the directory itself; for flat
 	// agents (Copilot, OpenCode) it is the prompt-file path.
 	//
@@ -38,7 +38,7 @@ type SkillAdapter interface {
 	// is "project"); homeDir is the user's home directory.
 	TargetPath(skillName, projectRoot, homeDir string, scope Scope) (string, error)
 
-	// Install materialises srcDir (the hub's `skills/<name>/`
+	// Install materializes srcDir (the hub's `skills/<name>/`
 	// directory) into the agent's convention and returns an
 	// InstallResult including the .skill-version marker path
 	// and the recorded content hash.
@@ -95,7 +95,7 @@ type InstallResult struct {
 	// SkillName installed.
 	SkillName string
 
-	// TargetPath where the materialised form lives.
+	// TargetPath where the materialized form lives.
 	TargetPath string
 
 	// MarkerPath is the absolute path of the `.skill-version`
@@ -190,7 +190,7 @@ func ComputeContentHash(dir string) (string, error) {
 	for _, f := range files {
 		// path\0len:body\0 keeps boundaries unambiguous so two
 		// concatenations don't collide ("ab"+"c" vs "a"+"bc").
-		fmt.Fprintf(h, "%s\x00%d\x00", f.rel, len(f.body))
+		_, _ = fmt.Fprintf(h, "%s\x00%d\x00", f.rel, len(f.body))
 		_, _ = h.Write(f.body)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
@@ -259,7 +259,7 @@ func copyTree(srcDir, dstDir string, overwrite bool, dryRun bool) ([]string, err
 		}
 		if !overwrite {
 			if _, err := os.Stat(dest); err == nil {
-				// Honour overwrite=false by skipping existing files;
+				// Honor overwrite=false by skipping existing files;
 				// the install logic's "skipped" pathway short-circuits
 				// before reaching here, so this is a defensive guard.
 				return nil
@@ -331,7 +331,7 @@ func writeFileAtomic(path string, body []byte, mode os.FileMode) error {
 	}
 	tmpPath := tmp.Name()
 	if _, err := io.Copy(tmp, strings.NewReader(string(body))); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		_ = os.Remove(tmpPath)
 		return err
 	}

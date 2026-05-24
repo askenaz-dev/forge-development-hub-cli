@@ -19,6 +19,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -52,7 +53,8 @@ func main() {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		// If the child exited with a non-zero status, surface that code.
-		if ee, ok := err.(*exec.ExitError); ok {
+		ee := &exec.ExitError{}
+		if errors.As(err, &ee) {
 			os.Exit(ee.ExitCode())
 		}
 		fmt.Fprintf(os.Stderr, "failed to invoke fdh: %v\n", err)

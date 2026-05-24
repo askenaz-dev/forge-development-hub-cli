@@ -8,9 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/viper"
+
 	"github.com/forge/fdh/pkg/adapters"
 	"github.com/forge/fdh/pkg/registry"
-	"github.com/spf13/viper"
 )
 
 // runContext bundles the runtime values every subcommand needs.
@@ -43,6 +44,7 @@ func buildRunContext(ctxIn context.Context, info BuildInfo, verbose bool) (*runC
 		// Build-time errors are user-visible but not always blocking; some
 		// commands (config) work without a registry. Callers decide whether
 		// to escalate.
+		//nolint:nilerr // intentional: degrade to no-registry context
 		return &runContext{
 			Ctx: ctxIn, HomeDir: home, ProjectRoot: root, Adapters: mani,
 			BuildVersion: info.Version, Verbose: verbose,

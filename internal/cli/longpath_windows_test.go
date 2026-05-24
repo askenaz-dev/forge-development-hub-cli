@@ -6,8 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/forge/fdh/internal/cli"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/forge/fdh/internal/cli"
 )
 
 func TestCheckLongPath_ShortPathOK(t *testing.T) {

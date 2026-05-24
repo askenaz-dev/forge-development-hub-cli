@@ -8,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forge/fdh/pkg/instincts"
 	"github.com/spf13/cobra"
+
+	"github.com/forge/fdh/pkg/instincts"
 )
 
 // newEvolveCmd wires `fdh evolve` — the admin-facing clustering command.

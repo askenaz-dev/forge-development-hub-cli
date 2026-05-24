@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 
 	"golang.org/x/sys/windows/registry"
@@ -59,7 +60,7 @@ func longPathsEnabledFromRegistry() (bool, string) {
 
 	v, _, err := k.GetIntegerValue("LongPathsEnabled")
 	if err != nil {
-		if err == registry.ErrNotExist {
+		if errors.Is(err, registry.ErrNotExist) {
 			return false, "missing (defaults to 0)"
 		}
 		return false, fmt.Sprintf("unreadable (%v)", err)

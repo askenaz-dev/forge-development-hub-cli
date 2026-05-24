@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/forge/fdh/pkg/provenance"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/pkg/provenance"
 )
 
 func TestWriteAndReadSidecar(t *testing.T) {

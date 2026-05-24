@@ -10,10 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/forge/fdh/internal/portalapi"
-	"github.com/forge/fdh/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/internal/portalapi"
+	"github.com/forge/fdh/internal/testutil"
 )
 
 func newTestServer(t *testing.T) (*portalapi.Server, http.Handler) {

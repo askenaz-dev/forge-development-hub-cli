@@ -14,8 +14,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/forge/fdh/pkg/bundle"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/pkg/bundle"
 )
 
 // SkillSpec describes a skill the test wants to publish into a fixture registry.

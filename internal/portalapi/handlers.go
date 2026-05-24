@@ -1,7 +1,6 @@
 package portalapi
 
 import (
-	"context"
 	_ "embed"
 	"net/http"
 	"path/filepath"
@@ -161,7 +160,7 @@ func (s *Server) handleGetSkillMD(w http.ResponseWriter, r *http.Request) {
 		s.notFoundFor(w, "bundle_not_found", ns, name, version)
 		return
 	}
-	defer bp.Cleanup()
+	defer func() { _ = bp.Cleanup() }()
 
 	b, err := bundle.Load(bp.Path)
 	if err != nil {
@@ -294,16 +293,6 @@ func containsString(haystack []string, needle string) bool {
 		}
 	}
 	return false
-}
-
-// userFromContext is kept for tests that pre-attach a UserIdentity directly
-// to the context. Production code uses `userFromRequest` (auth_middleware.go)
-// which understands the richer `auth.User` shape.
-func (s *Server) userFromContext(ctx context.Context) UserIdentity {
-	if u, ok := ctx.Value(userContextKey{}).(UserIdentity); ok {
-		return u
-	}
-	return UserIdentity{Role: "anonymous"}
 }
 
 // hasMinRole reports whether actual satisfies the minimum role required.

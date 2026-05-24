@@ -166,14 +166,14 @@ func die(err error) {
 // buildSeedSkills returns one portable skill per SDLC phase from the
 // installer-core spec appendix:
 //
-//   1. requirements   - user-story-generation
-//   2. architecture   - adr-generation
-//   3. development    - pr-description-writer
-//   4. code-review    - code-review-checklist
-//   5. testing        - unit-test-generation
-//   6. security       - owasp-quick-review
-//   7. cicd           - release-notes-generation
-//   8. operations     - runbook-template
+//  1. requirements   - user-story-generation
+//  2. architecture   - adr-generation
+//  3. development    - pr-description-writer
+//  4. code-review    - code-review-checklist
+//  5. testing        - unit-test-generation
+//  6. security       - owasp-quick-review
+//  7. cicd           - release-notes-generation
+//  8. operations     - runbook-template
 //
 // Every skill is `portable: true` by default — the bodies use only
 // agent-neutral prose (no $ARGUMENTS, no Claude-only frontmatter) so the
@@ -215,7 +215,7 @@ for each story:
 After drafting, verify each story against this checklist:
 - INVEST: Independent, Negotiable, Valuable, Estimable, Small, Testable.
 - No implementation detail leaks (no "use Postgres", "add a Redis cache").
-- Every acceptance criterion maps to observable behaviour, not internal state.
+- Every acceptance criterion maps to observable behavior, not internal state.
 `,
 				"references/example.md": "# Example\n\nAs a regional buyer, I want to filter the daily promotions feed by inventory level, so that I never advertise an item we cannot ship.\n",
 			},
@@ -307,8 +307,8 @@ references to the follow-up tickets.
 Anti-patterns:
 - "Refactor stuff" — too vague, rewrite.
 - A test plan that says "ran the existing tests" — list the new
-  observable behaviour instead.
-- Hidden behaviour changes packaged inside "small refactor" PRs.
+  observable behavior instead.
+- Hidden behavior changes packaged inside "small refactor" PRs.
 `,
 			},
 		},
@@ -344,8 +344,8 @@ say so explicitly in the review comment rather than skipping silently.
 - Comments explain WHY, not WHAT. Delete a comment that paraphrases code.
 
 ## Testing
-- New behaviour has a test that fails without the change.
-- Test names describe behaviour, not implementation.
+- New behavior has a test that fails without the change.
+- Test names describe behavior, not implementation.
 - No flakiness sources: time.Sleep, network without retry, randomness without seed.
 
 ## Convention adherence
@@ -431,7 +431,7 @@ short description, suggested remediation.
 3. Injection — parameterized queries, validated user input on every
    path that reaches a sink (SQL, OS exec, LDAP, NoSQL, XPath).
 4. Insecure design — sensitive workflows include audit logging, secure
-   defaults, and explicit fail-closed behaviour.
+   defaults, and explicit fail-closed behavior.
 5. Security misconfiguration — default credentials removed; admin
    endpoints not exposed without authn; CORS scoped narrowly.
 6. Vulnerable components — declared dependencies advanced past known
@@ -441,7 +441,7 @@ short description, suggested remediation.
 8. Software/data integrity failures — supply chain (signed artifacts,
    verified plugins); CI/CD steps require approvals for prod.
 9. Logging and monitoring — every authn event logged; PII redacted in
-   logs; alerts on anomalous behaviour.
+   logs; alerts on anomalous behavior.
 10. Server-side request forgery — every URL fetched from user input
     routed through an allowlist.
 
@@ -472,7 +472,7 @@ Given a list of merged PRs (titles, descriptions, labels), produce release
 notes in this exact structure:
 
 ## Headline
-One sentence summarising the most user-impacting change.
+One sentence summarizing the most user-impacting change.
 
 ## Highlights
 Two to five bullets, each a single sentence describing a user-visible
@@ -601,7 +601,7 @@ var communityNamespace = map[string]struct {
 	},
 	"diagnose": {
 		"development", "imported-from-mattpocock-skills",
-		"Disciplined diagnosis loop for hard bugs: reproduce → minimize → hypothesise → fix. From mattpocock/skills.",
+		"Disciplined diagnosis loop for hard bugs: reproduce → minimize → hypothesize → fix. From mattpocock/skills.",
 		[]string{"debugging", "diagnosis", "community"},
 	},
 	"zoom-out": {
@@ -815,11 +815,11 @@ func writeTarGz(outPath, srcDir, prefix string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	gz := gzip.NewWriter(f)
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	tw := tar.NewWriter(gz)
-	defer tw.Close()
+	defer func() { _ = tw.Close() }()
 
 	return filepath.Walk(srcDir, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -849,7 +849,7 @@ func writeTarGz(outPath, srcDir, prefix string) error {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		_, err = io.Copy(tw, file)
 		return err
 	})

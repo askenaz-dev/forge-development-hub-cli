@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/forge/fdh/pkg/adapters"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/pkg/adapters"
 )
 
 func TestLoadDefault_HasFourAgents(t *testing.T) {

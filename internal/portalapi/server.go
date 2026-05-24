@@ -21,9 +21,9 @@ import (
 // All read endpoints serve from an in-memory snapshot maintained by a
 // background refresh loop.
 type Server struct {
-	cfg       Config
-	build     BuildInfo
-	registry  registry.Registry
+	cfg      Config
+	build    BuildInfo
+	registry registry.Registry
 
 	snapshot atomic.Pointer[snapshot]
 	mu       sync.Mutex

@@ -280,7 +280,7 @@ func ReadStateInstincts() (StateInstincts, error) {
 	}
 	var top map[string]any
 	if err := json.Unmarshal(data, &top); err != nil {
-		return StateInstincts{}, nil
+		return StateInstincts{}, nil //nolint:nilerr // corrupt state → treat as empty
 	}
 	raw, ok := top["instincts"]
 	if !ok {
@@ -332,9 +332,9 @@ func ResolvePrefix(prefix string) (string, error) {
 type BundleFormat int
 
 const (
-	BundleYAML   BundleFormat = iota // single YAML doc with `instincts: [...]`
-	BundleJSON                       // single JSON array
-	BundleTarGz                      // tar.gz of <id>.yaml files
+	BundleYAML  BundleFormat = iota // single YAML doc with `instincts: [...]`
+	BundleJSON                      // single JSON array
+	BundleTarGz                     // tar.gz of <id>.yaml files
 	BundleUnknown
 )
 
@@ -355,9 +355,9 @@ func DetectBundleFormat(path string) BundleFormat {
 
 // BundleDoc is the wrapping object used by YAML and JSON bundle exports.
 type BundleDoc struct {
-	SchemaVersion int                      `json:"schema_version" yaml:"schema_version"`
-	ExportedAt    time.Time                `json:"exported_at" yaml:"exported_at"`
-	Instincts     []map[string]any         `json:"instincts" yaml:"instincts"`
+	SchemaVersion int              `json:"schema_version" yaml:"schema_version"`
+	ExportedAt    time.Time        `json:"exported_at" yaml:"exported_at"`
+	Instincts     []map[string]any `json:"instincts" yaml:"instincts"`
 }
 
 // WriteAll dumps an io.Writer with the given bundle in the given format.
@@ -372,16 +372,16 @@ func WriteAll(w io.Writer, format BundleFormat, items []*Instinct) error {
 	}
 	for _, it := range items {
 		entry := map[string]any{
-			"id":            it.ID,
-			"title":         it.Title,
-			"confidence":    it.Confidence,
-			"domain":        it.Domain,
-			"captured_by":   it.CapturedBy,
-			"captured_at":   it.CapturedAt.UTC(),
-			"context":       it.Context,
-			"tags":          it.Tags,
+			"id":             it.ID,
+			"title":          it.Title,
+			"confidence":     it.Confidence,
+			"domain":         it.Domain,
+			"captured_by":    it.CapturedBy,
+			"captured_at":    it.CapturedAt.UTC(),
+			"context":        it.Context,
+			"tags":           it.Tags,
 			"related_skills": it.RelatedSkills,
-			"body":          it.Body,
+			"body":           it.Body,
 		}
 		doc.Instincts = append(doc.Instincts, entry)
 	}
@@ -389,7 +389,7 @@ func WriteAll(w io.Writer, format BundleFormat, items []*Instinct) error {
 	case BundleYAML:
 		enc := yaml.NewEncoder(w)
 		enc.SetIndent(2)
-		defer enc.Close()
+		defer func() { _ = enc.Close() }()
 		return enc.Encode(doc)
 	case BundleJSON:
 		enc := json.NewEncoder(w)
@@ -425,7 +425,7 @@ func ReadAllBundle(data []byte, format BundleFormat) ([]*Instinct, error) {
 		}
 		// Extract body separately because the on-disk file stores body outside
 		// the frontmatter, but bundles put body inside the entry.
-		bodyAny, _ := entry["body"]
+		bodyAny := entry["body"]
 		bodyStr, _ := bodyAny.(string)
 		// Build an Instinct from the frontmatter fields; ignore body via -.
 		var i Instinct

@@ -14,7 +14,7 @@ import (
 // The `.skill-version` marker is placed inside the copied directory.
 type ClaudeCodeAdapter struct{}
 
-func (ClaudeCodeAdapter) Agent() string             { return "claude-code" }
+func (ClaudeCodeAdapter) Agent() string              { return "claude-code" }
 func (ClaudeCodeAdapter) SupportsSubresources() bool { return true }
 
 func (ClaudeCodeAdapter) TargetPath(skillName, projectRoot, homeDir string, scope Scope) (string, error) {
@@ -127,4 +127,3 @@ func directoryInstall(agent, srcDir string, opts InstallOpts, tp targetPathFn) (
 	}
 	return result, nil
 }
-

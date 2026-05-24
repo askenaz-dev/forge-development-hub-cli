@@ -13,14 +13,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/forge/fdh/internal/testutil"
 	"github.com/forge/fdh/pkg/adapters"
 	"github.com/forge/fdh/pkg/bundle"
 	"github.com/forge/fdh/pkg/portability"
 	"github.com/forge/fdh/pkg/provenance"
 	"github.com/forge/fdh/pkg/registry"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // This package-level test exercises the install pipeline end-to-end without
@@ -351,7 +352,7 @@ func TestPipeline_NestedFilesPreserved(t *testing.T) {
 }
 
 func TestPipeline_E2EJSONStructure(t *testing.T) {
-	// Sanity that we can serialise a result via the same JSON encoder the
+	// Sanity that we can serialize a result via the same JSON encoder the
 	// CLI uses, and the bytes round-trip cleanly.
 	f := newPipelineFixture(t)
 	res, err := f.installInPipeline("code-review/standard", adapters.ScopeUser, nil)

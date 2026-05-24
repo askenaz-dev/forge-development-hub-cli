@@ -11,9 +11,10 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"golang.org/x/term"
+
 	"github.com/forge/fdh/pkg/adapters"
 	"github.com/forge/fdh/pkg/hubregistry"
-	"golang.org/x/term"
 )
 
 // wizardInput is the data flowing from `runInitWizard` into the
@@ -217,7 +218,7 @@ func runInitWizard(
 			return nil, nil, nil, Wrap(ExitGenericFailure, err)
 		}
 		if !ok {
-			fmt.Fprintln(stdout, "Cancelled.")
+			fmt.Fprintln(stdout, "Canceled.")
 			return agents, skills, nil, nil
 		}
 	}
@@ -329,7 +330,7 @@ func resolveSkillSelection(picked []string, catalog []hubregistry.SkillEntry) (v
 		known[e.Name] = true
 	}
 	for _, p := range picked {
-		// Honour `+name` / `-name` shorthand from the spec
+		// Honor `+name` / `-name` shorthand from the spec
 		// fdh-init-interactive: `+` adds, `-` removes. The CLI keeps
 		// the simple form here (presence ⇒ install); `-` filtering is
 		// handled by the caller by setting --no-defaults.

@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forge/fdh/pkg/adapters"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/pkg/adapters"
 )
 
 // makeSourceSkill stages a fake hub skill directory with SKILL.md

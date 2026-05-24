@@ -11,12 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/forge/fdh/pkg/adapters"
 	"github.com/forge/fdh/pkg/bundle"
 	"github.com/forge/fdh/pkg/portability"
 	"github.com/forge/fdh/pkg/provenance"
 	"github.com/forge/fdh/pkg/registry"
-	"github.com/spf13/cobra"
 )
 
 // InstallResult is the JSON shape emitted by `install --json`.
