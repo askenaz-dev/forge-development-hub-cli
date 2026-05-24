@@ -18,7 +18,7 @@ export function SiteNav() {
           <Sparkles className="h-5 w-5 text-primary" />
           <span>FDH</span>
           <span className="hidden text-muted-foreground sm:inline">
-            Falabella Development Hub
+            forge Development Hub
           </span>
         </Link>
 

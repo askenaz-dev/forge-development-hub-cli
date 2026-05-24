@@ -90,8 +90,8 @@ describe("resolveProxy", () => {
 
   it("honors NO_PROXY exact hostname match", () => {
     expect(
-      resolveProxy("https://artifactory.falabella.internal/x", {
-        NO_PROXY: "artifactory.falabella.internal",
+      resolveProxy("https://artifactory.forge.internal/x", {
+        NO_PROXY: "artifactory.forge.internal",
         HTTPS_PROXY: "http://p:8080",
       }),
     ).toBeNull();

@@ -1,11 +1,11 @@
 {
-  "name": "@falabella/fdh",
+  "name": "@forge/fdh",
   "version": "0.0.0",
-  "description": "Falabella Development Hub CLI — npm wrapper for the Go binary. Zero runtime dependencies.",
-  "homepage": "https://github.com/falabella/fdh",
+  "description": "forge Development Hub CLI — npm wrapper for the Go binary. Zero runtime dependencies.",
+  "homepage": "https://github.com/forge/fdh",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/falabella/fdh.git",
+    "url": "git+https://github.com/forge/fdh.git",
     "directory": "npm"
   },
   "license": "UNLICENSED",
@@ -16,7 +16,7 @@
   },
   "bin": {
     "fdh": "./dist/cli.js",
-    "falabella-installer": "./dist/cli-alias.js"
+    "forge-installer": "./dist/cli-alias.js"
   },
   "files": [
     "dist/",

@@ -19,7 +19,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/falabella/fdh/pkg/bundle"
+	"github.com/forge/fdh/pkg/bundle"
 )
 
 type skillSpec struct {
@@ -43,6 +43,23 @@ func main() {
 	}
 
 	specs := buildSeedSkills()
+	// Append community-imported skills from scripts/seed-skills/community/.
+	// Each subdirectory there contains a SKILL.md; we wrap it as a
+	// skillSpec and publish it under the SDLC namespace declared in the
+	// communityNamespace map below.
+	community, err := loadCommunitySkills()
+	if err != nil {
+		die(fmt.Errorf("load community skills: %w", err))
+	}
+	specs = append(specs, community...)
+
+	// Append forge-authored skills under scripts/seed-skills/forge/.
+	// Each subdirectory has a SKILL.md plus optional references/, assets/.
+	forgeExtra, err := loadforgeExtraSkills()
+	if err != nil {
+		die(fmt.Errorf("load forge-authored extra skills: %w", err))
+	}
+	specs = append(specs, forgeExtra...)
 
 	idx := []map[string]any{}
 	for _, s := range specs {
@@ -298,12 +315,12 @@ Anti-patterns:
 		// 4. code-review
 		{
 			Namespace: "code-review", Name: "checklist", Version: "1.0.0",
-			Description: "Standardized code review checklist used by every Falabella reviewer.",
+			Description: "Standardized code review checklist used by every forge reviewer.",
 			OwnerTeam:   "dx-platform", Tags: []string{"review", "quality", "checklist"},
 			Files: map[string]string{
 				"SKILL.md": `---
 name: checklist
-description: Standardized code review checklist used by every Falabella reviewer.
+description: Standardized code review checklist used by every forge reviewer.
 license: MIT
 metadata:
   author: dx-platform
@@ -557,6 +574,240 @@ Quality bar:
 			},
 		},
 	}
+}
+
+// communityNamespace maps each community-imported skill (by its source
+// directory name) to the SDLC-phase namespace under which it's published
+// in the registry. Adding a new community skill: drop its SKILL.md under
+// scripts/seed-skills/community/<name>/ and add an entry here.
+var communityNamespace = map[string]struct {
+	namespace, ownerTeam, description string
+	tags                              []string
+}{
+	"tdd": {
+		"testing", "imported-from-mattpocock-skills",
+		"Test-driven development with red-green-refactor loop. From mattpocock/skills.",
+		[]string{"tdd", "testing", "red-green-refactor", "community"},
+	},
+	"webapp-testing": {
+		"testing", "imported-from-anthropics-skills",
+		"Toolkit for testing local web apps with Playwright. From anthropics/skills.",
+		[]string{"e2e", "playwright", "testing", "community"},
+	},
+	"improve-codebase-architecture": {
+		"architecture", "imported-from-mattpocock-skills",
+		"Find architectural refactoring opportunities and deepen shallow modules. From mattpocock/skills.",
+		[]string{"architecture", "refactoring", "community"},
+	},
+	"diagnose": {
+		"development", "imported-from-mattpocock-skills",
+		"Disciplined diagnosis loop for hard bugs: reproduce → minimize → hypothesise → fix. From mattpocock/skills.",
+		[]string{"debugging", "diagnosis", "community"},
+	},
+	"zoom-out": {
+		"development", "imported-from-mattpocock-skills",
+		"Tell the agent to zoom out and map a code area at a higher level. Claude-only. From mattpocock/skills.",
+		[]string{"navigation", "community", "claude-only"},
+	},
+	"skill-creator": {
+		"development", "imported-from-anthropics-skills",
+		"Create, edit, and benchmark Agent Skills with eval-driven iteration. From anthropics/skills.",
+		[]string{"meta", "skill-authoring", "community"},
+	},
+}
+
+// loadCommunitySkills walks scripts/seed-skills/community/, reads each
+// SKILL.md, and wraps it as a skillSpec for publication. The skill name
+// MUST match the directory name (enforced by the bundle spec); the namespace,
+// owner team, and tags come from the communityNamespace map above.
+func loadCommunitySkills() ([]skillSpec, error) {
+	root, err := communityDir()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // no community skills configured
+		}
+		return nil, err
+	}
+
+	var out []skillSpec
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		ns, ok := communityNamespace[name]
+		if !ok {
+			fmt.Fprintf(os.Stderr,
+				"warning: community skill %q has no namespace mapping, skipping\n", name)
+			continue
+		}
+		skillMDPath := filepath.Join(root, name, "SKILL.md")
+		content, err := os.ReadFile(skillMDPath)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", skillMDPath, err)
+		}
+		out = append(out, skillSpec{
+			Namespace:   ns.namespace,
+			Name:        name,
+			Version:     "1.0.0",
+			Description: ns.description,
+			OwnerTeam:   ns.ownerTeam,
+			Tags:        ns.tags,
+			Files: map[string]string{
+				"SKILL.md": string(content),
+			},
+		})
+	}
+	return out, nil
+}
+
+// communityDir locates scripts/seed-skills/community/ relative to this
+// source file's location, so the script works both via `go run` and a
+// compiled binary as long as the repo layout is intact.
+func communityDir() (string, error) {
+	return findSeedSkillsDir("community")
+}
+
+// forgeExtraNamespace maps each forge-authored extra skill to its
+// SDLC namespace, owner team, and tags. The map is intentionally
+// hand-maintained so additions are explicit and reviewable.
+var forgeExtraNamespace = map[string]struct {
+	namespace, ownerTeam, description string
+	tags                              []string
+}{
+	"spec-driven-development": {
+		"development", "dx-platform",
+		"Drive non-trivial changes through a four-phase spec-driven flow (explore, propose, apply, archive).",
+		[]string{"sdd", "openspec", "methodology"},
+	},
+	"forge-tech-stack": {
+		"development", "dx-platform",
+		"forge's approved technology stack reference plus the code-quality gates every service must pass.",
+		[]string{"tech-stack", "code-quality", "sonarlint", "linters"},
+	},
+	"forge-architecture-patterns": {
+		"architecture", "architecture-guild",
+		"Reference architecture patterns and design principles applied across forge services.",
+		[]string{"patterns", "boundaries", "events", "api-design"},
+	},
+	"devsecops": {
+		"security", "appsec",
+		"Security review + DevSecOps practices: threat modeling, SAST/DAST, secret management, runtime security.",
+		[]string{"devsecops", "shift-left", "threat-modeling", "vault"},
+	},
+	"landing-zone-deploy": {
+		"cicd", "platform-engineering",
+		"Stand up a service on forge's landing zone — five GitLab repos for infra, gitops, IAM, networking, and secrets.",
+		[]string{"landing-zone", "gitops", "flux", "terraform", "vault"},
+	},
+}
+
+// loadforgeExtraSkills walks scripts/seed-skills/forge/ and wraps
+// each subdirectory as a skillSpec. The SKILL.md is the entrypoint; any
+// references/ or assets/ siblings are bundled too.
+func loadforgeExtraSkills() ([]skillSpec, error) {
+	root, err := findSeedSkillsDir("forge")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []skillSpec
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		ns, ok := forgeExtraNamespace[name]
+		if !ok {
+			fmt.Fprintf(os.Stderr,
+				"warning: forge-extra skill %q has no namespace mapping, skipping\n", name)
+			continue
+		}
+		skillDir := filepath.Join(root, name)
+		files, err := collectBundleFiles(skillDir)
+		if err != nil {
+			return nil, fmt.Errorf("collect bundle files for %s: %w", name, err)
+		}
+		out = append(out, skillSpec{
+			Namespace:   ns.namespace,
+			Name:        name,
+			Version:     "1.0.0",
+			Description: ns.description,
+			OwnerTeam:   ns.ownerTeam,
+			Tags:        ns.tags,
+			Files:       files,
+		})
+	}
+	return out, nil
+}
+
+// collectBundleFiles walks a skill directory and returns a map of
+// relative-path -> content, ready to feed into skillSpec.Files. Used by
+// the forge-extra loader so skills with multi-file references (like
+// forge-tech-stack's references/tech-stack.json) ship correctly.
+func collectBundleFiles(dir string) (map[string]string, error) {
+	out := map[string]string{}
+	err := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		// Use forward-slash relpaths inside the bundle (canonical layout).
+		relForward := filepath.ToSlash(rel)
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		out[relForward] = string(data)
+		return nil
+	})
+	return out, err
+}
+
+// findSeedSkillsDir locates scripts/seed-skills/<group>/ relative to the
+// invocation's working directory, walking up to handle `go run`,
+// `go install`, and tests.
+func findSeedSkillsDir(group string) (string, error) {
+	rel := filepath.Join("scripts", "seed-skills", group)
+	candidates := []string{
+		rel,
+		filepath.Join("..", "seed-skills", group),
+		filepath.Join("..", "..", rel),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			abs, _ := filepath.Abs(c)
+			return abs, nil
+		}
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for cur := cwd; cur != filepath.Dir(cur); cur = filepath.Dir(cur) {
+		candidate := filepath.Join(cur, rel)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("seed-skills/%s directory not found from cwd %s", group, cwd)
 }
 
 func writeTarGz(outPath, srcDir, prefix string) error {

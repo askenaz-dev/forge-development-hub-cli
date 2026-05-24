@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/falabella/fdh/pkg/adapters"
-	"github.com/falabella/fdh/pkg/provenance"
+	"github.com/forge/fdh/pkg/adapters"
+	"github.com/forge/fdh/pkg/provenance"
 	"github.com/spf13/cobra"
 )
 

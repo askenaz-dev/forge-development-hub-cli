@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/falabella/fdh/internal/portalapi/auth"
+	"github.com/forge/fdh/internal/portalapi/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

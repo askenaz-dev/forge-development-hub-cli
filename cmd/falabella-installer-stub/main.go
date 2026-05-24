@@ -1,4 +1,4 @@
-// Package main is the back-compat stub for the legacy `falabella-installer`
+// Package main is the back-compat stub for the legacy `forge-installer`
 // binary. Built alongside the primary `fdh` binary during the 90-day
 // deprecation window declared in the dev-portal change's design.md and the
 // fdh-cli-naming spec.
@@ -14,7 +14,7 @@
 // This file intentionally has no test coverage and no logic beyond what is
 // written here — its job is to forward, not to implement features. When
 // the 90-day window closes (see docs/release.md sunset date), delete the
-// `cmd/falabella-installer-stub/` directory and remove the artifact from
+// `cmd/forge-installer-stub/` directory and remove the artifact from
 // release.yml.
 package main
 
@@ -30,7 +30,7 @@ const (
 
 func main() {
 	fmt.Fprintln(os.Stderr,
-		"DEPRECATED: 'falabella-installer' has been renamed to 'fdh'. "+
+		"DEPRECATED: 'forge-installer' has been renamed to 'fdh'. "+
 			"This stub forwards to the new binary; install 'fdh' and update your scripts. "+
 			"Run 'fdh config migrate' to move your config to the new location.")
 
@@ -39,9 +39,9 @@ func main() {
 		fmt.Fprintln(os.Stderr,
 			"\nError: 'fdh' is not on PATH.")
 		fmt.Fprintln(os.Stderr,
-			"Install it from the Falabella internal package manager and ensure it is on PATH.")
+			"Install it from the forge internal package manager and ensure it is on PATH.")
 		fmt.Fprintln(os.Stderr,
-			"See https://fdh.falabella.internal/install for download links.")
+			"See https://fdh.forge.internal/install for download links.")
 		os.Exit(exitNotInstalled)
 	}
 

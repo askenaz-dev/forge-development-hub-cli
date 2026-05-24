@@ -2,17 +2,46 @@
 
 Cross-platform CLI that installs spec-compliant [Agent Skills](https://agentskills.io) to four AI coding agents — Claude Code, GitHub Copilot, OpenAI Codex, OpenCode — from a shared Git-backed skill registry.
 
-This repository holds the **implementation**. The **specification** that governs every requirement here lives in the Falabella OpenSpec hub:
+This repository holds the **implementation**. The **specification** that governs every requirement here lives in the Forge OpenSpec hub:
 
-- Hub: `falabella-development-hub`
-- Change: [`installer-core`](../falabella-development-hub/openspec/changes/installer-core/) (in progress)
-- Specs (after archive): `falabella-development-hub/openspec/specs/`
+- Hub: `forge-development-hub`
+- Change: [`installer-core`](../forge-development-hub/openspec/changes/installer-core/) (in progress)
+- Specs (after archive): `forge-development-hub/openspec/specs/`
 
 If a behavior of the installer disagrees with the spec, the spec wins. Open a change in the hub to alter requirements; do not change behavior here without a corresponding spec update.
 
 ## Status
 
-Pre-release. Pilot target: 30 Falabella developers across macOS, Linux, and Windows. See [`docs/quickstart.md`](docs/quickstart.md) once available.
+Pre-release. Pilot target: 30 forge developers across macOS, Linux, and Windows. See [`docs/quickstart.md`](docs/quickstart.md).
+
+## Installation
+
+```sh
+# macOS / Linux — one-liner
+curl -fsSL https://${FDH_PKG_HOST}/fdh/install.sh | bash
+```
+
+```powershell
+# Windows — PowerShell
+iwr https://${env:FDH_PKG_HOST}/fdh/install.ps1 | iex
+```
+
+```sh
+# Homebrew (when the internal tap is published)
+brew install forge-internal/tools/fdh
+
+# Linux packages
+sudo apt install ./fdh_<version>_linux_amd64.deb     # Debian / Ubuntu
+sudo rpm -ivh fdh_<version>_linux_amd64.rpm          # Fedora / RHEL
+```
+
+The default `FDH_PKG_HOST=pkg.forge.internal` is a placeholder until
+the platform team confirms the real host. Set `FDH_PKG_HOST=<real-host>`
+in your environment to override.
+
+For air-gapped installs and PowerShell `ExecutionPolicy` workarounds,
+see [`docs/install.md`](docs/install.md). Stable exit codes are documented in
+[`docs/exit-codes.md`](docs/exit-codes.md).
 
 ## Layout
 

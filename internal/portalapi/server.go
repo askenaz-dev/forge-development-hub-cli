@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/falabella/fdh/internal/portalapi/auth"
-	"github.com/falabella/fdh/pkg/registry"
+	"github.com/forge/fdh/internal/portalapi/auth"
+	"github.com/forge/fdh/pkg/registry"
 )
 
 // Server is the long-lived API server backed by a `pkg/registry.Registry`.
@@ -104,6 +104,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/admin/activation", s.handleGetActivation)
 
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPI)
+	// API documentation UIs.
+	mux.HandleFunc("GET /docs", s.handleDocsIndex)
+	mux.HandleFunc("GET /docs/", s.handleDocsIndex)
+	mux.HandleFunc("GET /docs/swagger", s.handleDocsIndex)
+	mux.HandleFunc("GET /docs/redoc", s.handleDocsIndex)
+	mux.HandleFunc("GET /redoc", s.handleRedoc)
 	mux.Handle("GET /metrics", s.metrics.handler())
 
 	// Order: auth attaches user to context first; logging captures the

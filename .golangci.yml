@@ -40,7 +40,7 @@ linters-settings:
     check-type-assertions: true
     check-blank: true
   goimports:
-    local-prefixes: github.com/falabella/fdh
+    local-prefixes: github.com/forge/fdh
   misspell:
     locale: US
   staticcheck:

@@ -183,7 +183,7 @@ jobs:
           echo "manifest.json refreshed to point at $VERSION"
 
   publish-npm:
-    name: publish @falabella/fdh to internal npm registry
+    name: publish @forge/fdh to internal npm registry
     needs: [goreleaser, publish]
     runs-on: ubuntu-latest
     # Only on real tag pushes (skip workflow_dispatch / snapshot builds).
@@ -218,7 +218,7 @@ jobs:
           npm_ver="${VERSION#v}"
           # --no-git-tag-version: don't commit; --allow-same-version: idempotent on re-runs.
           npm version "$npm_ver" --no-git-tag-version --allow-same-version
-          echo "set @falabella/fdh version to $npm_ver"
+          echo "set @forge/fdh version to $npm_ver"
 
       - name: Configure registry auth
         env:
@@ -234,7 +234,7 @@ jobs:
           reg_host="${NPM_INTERNAL_REGISTRY#https://}"
           reg_host="${reg_host#http://}"
           {
-            echo "@falabella:registry=${NPM_INTERNAL_REGISTRY}"
+            echo "@forge:registry=${NPM_INTERNAL_REGISTRY}"
             echo "//${reg_host}/:_authToken=${NPM_INTERNAL_TOKEN}"
             echo "always-auth=true"
           } > ~/.npmrc

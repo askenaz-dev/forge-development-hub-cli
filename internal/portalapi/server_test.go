@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/falabella/fdh/internal/portalapi"
-	"github.com/falabella/fdh/internal/testutil"
+	"github.com/forge/fdh/internal/portalapi"
+	"github.com/forge/fdh/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

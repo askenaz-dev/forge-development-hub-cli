@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/falabella/fdh/internal/cli"
+	"github.com/forge/fdh/internal/cli"
 	"github.com/stretchr/testify/assert"
 )
 

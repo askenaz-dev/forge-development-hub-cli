@@ -31,29 +31,28 @@ covering the hoisted layout.
 Keycloak. The Helm chart's web Deployment also works (it builds on a
 clean Kubernetes node, not via pnpm-in-Docker).
 
-## 2. Keycloak issuer URL mismatch between Docker network and host
+## 2. Keycloak issuer URL mismatch between Docker network and host — RESOLVED
 
-**Symptom:** API exits at startup with
-`oidc: issuer URL provided to client ("http://keycloak:8080/realms/fdh-dev")
-did not match the issuer URL returned by provider`.
+**Symptom (was):** API and/or Auth.js failed with
+`oidc: issuer URL provided to client did not match the issuer URL returned by provider`
+or `TypeError: fetch failed` during the OIDC flow.
 
-**Root cause:** Keycloak in compose listens on port 8080 inside the
-container (Docker network alias `keycloak:8080`) and on `localhost:18088`
-on the host. The issuer claim in tokens is a single string, but the API
-reaches Keycloak via the Docker alias while the browser reaches it via
-`localhost`. The two URLs differ.
+**Root cause (was):** Keycloak's token issuer claim is a single string,
+but Docker containers can't reach `localhost:<port>` of the host (their
+localhost is themselves) while the browser can.
 
-**Workaround:** for local-dev, run the API natively on the host so it
-shares the browser's `localhost:18088` view of Keycloak. The dockerized
-API works once we set `KC_HOSTNAME=keycloak` + add a `host-gateway`
-mapping so the browser can also reach `http://keycloak:8080`, but that
-requires editing `/etc/hosts`.
+**Resolution:** the compose stack now uses `host.docker.internal:18088`
+as the single Keycloak URL everywhere:
+- Browser reaches it because Docker Desktop adds `host.docker.internal`
+  to the host's hosts file pointing at `127.0.0.1`.
+- Containers reach it via the `host-gateway` magic alias declared in
+  the compose `extra_hosts` field (works on Linux Docker too).
+- The issuer claim in tokens is `http://host.docker.internal:18088/...`
+  — identical from both contexts, so validation passes.
 
-**Recommended fix:** front Keycloak with a reverse proxy that exposes a
-single hostname both the Docker network and the host can resolve to —
-e.g., a tiny nginx in compose that listens on a non-conflicting port
-and the API + browser both target. The Helm chart sidesteps this by
-deploying behind a single Ingress already.
+In production the issue doesn't apply: a real Keycloak (e.g.
+`keycloak.forge.internal`) is reachable from both browsers and
+in-cluster pods at the same DNS name.
 
 ## 3. next-intl routing requires `app/[locale]/` segment
 

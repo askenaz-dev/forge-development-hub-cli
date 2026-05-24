@@ -2,7 +2,7 @@
 #
 # Production deploys override:
 #   - image tags (api.image.tag, web.image.tag)
-#   - ingress.host (e.g. fdh.falabella.internal)
+#   - ingress.host (e.g. fdh.forge.internal)
 #   - portal.registryURL (the production registry Git URL)
 #   - oidc.* (the production Keycloak)
 #   - oidc.clientSecretRef (Kubernetes Secret name + key)
@@ -10,7 +10,7 @@
 api:
   replicaCount: 2
   image:
-    repository: pkg.falabella.internal/fdh/fdh-portal-api
+    repository: pkg.forge.internal/fdh/fdh-portal-api
     tag: ""           # empty -> chart appVersion
     pullPolicy: IfNotPresent
   resources:
@@ -29,7 +29,7 @@ api:
 web:
   replicaCount: 2
   image:
-    repository: pkg.falabella.internal/fdh/fdh-portal-web
+    repository: pkg.forge.internal/fdh/fdh-portal-web
     tag: ""
     pullPolicy: IfNotPresent
   resources:
@@ -48,13 +48,13 @@ web:
 portal:
   # Git remote URL of the production skill registry. The API clones this
   # into an emptyDir at startup and refreshes every refreshInterval.
-  registryURL: "https://git.falabella.internal/skills/registry.git"
+  registryURL: "https://git.forge.internal/skills/registry.git"
   registryBranch: "main"
   refreshInterval: "60s"
 
 oidc:
   # Full discovery URL — Keycloak realm endpoint.
-  discoveryURL: "https://keycloak.falabella.internal/realms/fdh"
+  discoveryURL: "https://keycloak.forge.internal/realms/fdh"
   clientID: "fdh-portal"
   # Reference a Kubernetes Secret holding the client secret. The chart
   # does NOT embed the secret value. Create the secret separately, e.g.:
@@ -75,7 +75,7 @@ observability:
 ingress:
   enabled: true
   className: "nginx"
-  host: "fdh.falabella.internal"
+  host: "fdh.forge.internal"
   tls:
     enabled: true
     secretName: "fdh-portal-tls"

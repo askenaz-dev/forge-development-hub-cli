@@ -37,7 +37,7 @@ function main(): never {
         `\n` +
         `The postinstall script may have failed or been skipped.\n` +
         `Repair by running:\n` +
-        `  npm rebuild @falabella/fdh\n` +
+        `  npm rebuild @forge/fdh\n` +
         `(replace 'npm' with pnpm/yarn/bun if you installed with those).`,
     );
     process.exit(127); // command not found

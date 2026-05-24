@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/falabella/fdh/pkg/bundle"
-	"github.com/falabella/fdh/pkg/registry"
+	"github.com/forge/fdh/pkg/bundle"
+	"github.com/forge/fdh/pkg/registry"
 )
 
 //go:embed openapi.yaml

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/falabella/fdh/pkg/bundle"
+	"github.com/forge/fdh/pkg/bundle"
 	"github.com/stretchr/testify/require"
 )
 

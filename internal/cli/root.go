@@ -71,10 +71,10 @@ detected and which directories it will write to.`
 
 // initConfig wires viper to read configuration from an explicit --config
 // path, the per-user config directory, and environment variables prefixed
-// with FALABELLA_INSTALLER_.
+// with forge_INSTALLER_.
 func initConfig(cmd *cobra.Command) error {
 	v := viper.GetViper()
-	v.SetEnvPrefix("FALABELLA_INSTALLER")
+	v.SetEnvPrefix("forge_INSTALLER")
 	v.AutomaticEnv()
 
 	// Sensible defaults — used by config get if nothing else is set.
@@ -98,7 +98,7 @@ func initConfig(cmd *cobra.Command) error {
 		if _, notFound := err.(viper.ConfigFileNotFoundError); !notFound {
 			return Errorf(ExitInvalidUsage, "config: %v", err)
 		}
-		// Fall back to the legacy `falabella-installer` config directory
+		// Fall back to the legacy `forge-installer` config directory
 		// for the 90-day deprecation window after the rename. When we read
 		// from there, emit a one-line stderr warning suggesting migrate.
 		legacy := legacyConfigDir()
@@ -128,14 +128,14 @@ func defaultConfigDir() string {
 }
 
 // legacyConfigDir returns the pre-rename config directory
-// (`<user-config>/falabella-installer`). Used only as a read-fallback
+// (`<user-config>/forge-installer`). Used only as a read-fallback
 // during the deprecation window and as the source for `fdh config migrate`.
 func legacyConfigDir() string {
 	cfgDir, err := os.UserConfigDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(cfgDir, "falabella-installer")
+	return filepath.Join(cfgDir, "forge-installer")
 }
 
 func defaultAdaptersOverridePath() string {

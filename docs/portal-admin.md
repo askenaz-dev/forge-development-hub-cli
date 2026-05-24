@@ -26,7 +26,7 @@ commit without waiting, force a refresh:
 TOKEN=<keycloak-access-token-with-publisher-role>
 curl -X POST \
   -H "Authorization: Bearer ${TOKEN}" \
-  https://fdh.falabella.internal/api/v1/refresh
+  https://fdh.forge.internal/api/v1/refresh
 ```
 
 The response includes `refreshed_at` and `skill_count`.
@@ -63,7 +63,7 @@ completion + skip. The Go API exposes the most recent events:
 
 ```sh
 curl -H "Authorization: Bearer ${TOKEN}" \
-  https://fdh.falabella.internal/api/v1/admin/activation
+  https://fdh.forge.internal/api/v1/admin/activation
 ```
 
 The endpoint is admin-only and returns events from an in-memory ring

@@ -1,6 +1,6 @@
 # Keycloak setup for the FDH portal
 
-The portal authenticates against Falabella's existing Keycloak instance.
+The portal authenticates against forge's existing Keycloak instance.
 This page is the handoff to the platform identity team — one realm
 config + one OIDC client + four optional groups for role mapping.
 
@@ -25,8 +25,8 @@ realm is preferred. The portal does need the realm to expose:
 | Implicit flow        | Disabled                                                    |
 | Direct access grants | Disabled                                                    |
 | Service accounts     | Disabled (unless future automation requires)                |
-| Valid redirect URIs  | `https://fdh.falabella.internal/api/auth/callback/keycloak` |
-| Web origins          | `https://fdh.falabella.internal`                            |
+| Valid redirect URIs  | `https://fdh.forge.internal/api/auth/callback/keycloak` |
+| Web origins          | `https://fdh.forge.internal`                            |
 | PKCE                 | Required (`S256`)                                           |
 
 ### 3. Group claim mapper
@@ -89,7 +89,7 @@ realm.
 
 ## Switching IdPs
 
-If Falabella ever moves off Keycloak (e.g. to Entra ID), only configuration
+If forge ever moves off Keycloak (e.g. to Entra ID), only configuration
 changes — no portal code change. Auth.js's provider list and the Go API's
 `go-oidc` verifier both accept any conforming OIDC IdP. Document the
 swap in a new OpenSpec change before flipping the discovery URL.

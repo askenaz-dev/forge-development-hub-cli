@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/falabella/fdh/internal/testutil"
-	"github.com/falabella/fdh/pkg/registry"
+	"github.com/forge/fdh/internal/testutil"
+	"github.com/forge/fdh/pkg/registry"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"

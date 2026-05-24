@@ -7,7 +7,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/falabella/fdh/pkg/registry"
+	"github.com/forge/fdh/pkg/registry"
 	"github.com/spf13/cobra"
 )
 

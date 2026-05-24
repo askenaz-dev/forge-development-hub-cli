@@ -52,9 +52,9 @@ func newConfigCmd(info BuildInfo) *cobra.Command {
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "migrate",
-		Short: "Move config files from the legacy ~/.config/falabella-installer/ to the new ~/.config/fdh/",
+		Short: "Move config files from the legacy ~/.config/forge-installer/ to the new ~/.config/fdh/",
 		Long: `Migrate the per-user config directory from the deprecated
-'falabella-installer' name to the new 'fdh' name. This command is idempotent:
+'forge-installer' name to the new 'fdh' name. This command is idempotent:
 running it on an already-migrated machine prints "nothing to migrate".
 
 For 90 days after the rename ships, the CLI also reads from the legacy
@@ -159,7 +159,7 @@ func setNested(m map[string]any, dottedKey string, v any) {
 }
 
 // runConfigMigrate moves config files from the legacy
-// '<user-config>/falabella-installer/' directory to '<user-config>/fdh/'.
+// '<user-config>/forge-installer/' directory to '<user-config>/fdh/'.
 //
 // Idempotent: if the legacy directory is missing or the new files already
 // exist, the command reports "nothing to migrate" and exits zero.

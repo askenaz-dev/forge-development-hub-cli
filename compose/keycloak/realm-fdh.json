@@ -7,7 +7,7 @@
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
   "attributes": {
-    "frontendUrl": "http://localhost:8088"
+    "frontendUrl": "http://host.docker.internal:18088"
   },
   "groups": [
     { "name": "fdh-admins" },
@@ -56,9 +56,10 @@
       "standardFlowEnabled": true,
       "redirectUris": [
         "http://localhost:3000/api/auth/callback/keycloak",
-        "http://localhost:3000/*"
+        "http://localhost:3000/*",
+        "http://host.docker.internal:3000/*"
       ],
-      "webOrigins": ["http://localhost:3000"],
+      "webOrigins": ["http://localhost:3000", "http://host.docker.internal:3000"],
       "secret": "dev-secret",
       "protocol": "openid-connect",
       "protocolMappers": [

@@ -18,7 +18,7 @@ const config: Config = {
     extend: {
       colors: {
         // Restrained palette: slate neutrals + a single accent. Tune to
-        // brand once Falabella's design system is shared. Tokens are
+        // brand once forge's design system is shared. Tokens are
         // referenced by CSS variables in globals.css so dark mode swaps
         // the source values, not the component code.
         border: "hsl(var(--border))",

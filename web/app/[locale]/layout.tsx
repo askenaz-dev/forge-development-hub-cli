@@ -27,8 +27,8 @@ import { locales, type Locale } from "@/i18n";
 
 export const metadata: Metadata = {
   title: {
-    default: "Falabella Development Hub",
-    template: "%s · Falabella Development Hub",
+    default: "forge Development Hub",
+    template: "%s · forge Development Hub",
   },
   description:
     "Discover, install, and govern Agent Skills across Claude Code, GitHub Copilot, OpenAI Codex, and OpenCode.",

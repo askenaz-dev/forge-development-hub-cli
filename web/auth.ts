@@ -7,16 +7,31 @@
  * the frontend and backend agree on identity without sharing session state.
  *
  * Environment variables consumed at startup:
- *   AUTH_SECRET            — random 32+ byte secret for cookie signing
- *   AUTH_KEYCLOAK_ID       — OIDC client_id registered in Keycloak
- *   AUTH_KEYCLOAK_SECRET   — OIDC client_secret (confidential client)
- *   AUTH_KEYCLOAK_ISSUER   — full discovery URL, e.g.
- *                            https://keycloak.falabella.internal/realms/fdh
- *   NEXT_PUBLIC_SITE_URL   — public origin (used for the redirect_uri)
+ *   AUTH_SECRET                — random 32+ byte secret for cookie signing
+ *   AUTH_KEYCLOAK_ID           — OIDC client_id registered in Keycloak
+ *   AUTH_KEYCLOAK_SECRET       — OIDC client_secret (confidential client)
+ *   AUTH_KEYCLOAK_ISSUER       — issuer URL the browser hits + the token
+ *                                `iss` claim must equal. Local-dev value:
+ *                                http://localhost:18088/realms/fdh-dev
+ *   AUTH_KEYCLOAK_WELLKNOWN    — (optional) full discovery URL used for
+ *                                server-side fetches when the issuer URL
+ *                                is unreachable from the container, e.g.
+ *                                http://host.docker.internal:18088/...
+ *                                Defaults to {issuer}/.well-known/openid-configuration
+ *   NEXT_PUBLIC_SITE_URL       — public origin (used for the redirect_uri)
  */
 
 import NextAuth from "next-auth";
 import Keycloak from "next-auth/providers/keycloak";
+
+const issuer = process.env.AUTH_KEYCLOAK_ISSUER;
+// In local-dev with Docker, the container's `localhost` is itself, not the
+// host. We allow overriding just the discovery URL so server-side fetches
+// can go through `host.docker.internal` while the issuer string stays the
+// browser-facing `localhost:18088`. In production both URLs are the same.
+const wellKnown =
+  process.env.AUTH_KEYCLOAK_WELLKNOWN ??
+  (issuer ? `${issuer}/.well-known/openid-configuration` : undefined);
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -25,7 +40,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     Keycloak({
       clientId: process.env.AUTH_KEYCLOAK_ID ?? "fdh-portal",
       clientSecret: process.env.AUTH_KEYCLOAK_SECRET ?? "dev-secret",
-      issuer: process.env.AUTH_KEYCLOAK_ISSUER,
+      issuer,
+      wellKnown,
       // PKCE is enforced by default; we keep it explicit for clarity.
       checks: ["pkce", "state"],
     }),

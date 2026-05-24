@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/falabella/fdh/internal/testutil"
-	"github.com/falabella/fdh/pkg/registry"
+	"github.com/forge/fdh/internal/testutil"
+	"github.com/forge/fdh/pkg/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/falabella/fdh/pkg/instincts"
+	"github.com/forge/fdh/pkg/instincts"
 	"github.com/spf13/cobra"
 )
 

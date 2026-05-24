@@ -61,7 +61,7 @@ export class TargetUnsupportedError extends Error {
       `fdh: no prebuilt binary for ${platform}-${arch}. ` +
         `Supported: [${SUPPORTED_TARGETS.join(", ")}]. ` +
         `If you need this target, contact dx-platform or build from source ` +
-        `(https://github.com/falabella/fdh).`,
+        `(https://github.com/forge/fdh).`,
     );
     this.name = "TargetUnsupportedError";
   }
@@ -200,7 +200,7 @@ function directRequestOptions(
     hostname: target.hostname,
     port: target.port || (target.protocol === "https:" ? 443 : 80),
     path: target.pathname + target.search,
-    headers: { "user-agent": "@falabella/fdh-postinstall", ...headers },
+    headers: { "user-agent": "@forge/fdh-postinstall", ...headers },
   };
 }
 
@@ -220,7 +220,7 @@ function proxyRequestOptions(
       : undefined;
   const proxyHeaders: Record<string, string> = {
     host: target.host,
-    "user-agent": "@falabella/fdh-postinstall",
+    "user-agent": "@forge/fdh-postinstall",
     ...headers,
   };
   if (auth) proxyHeaders["proxy-authorization"] = auth;
@@ -352,7 +352,7 @@ export function resolveBinDir(packageRoot: string): string {
 }
 
 export function packageRootFromDist(distFileUrl: string): string {
-  // distFileUrl is `file:///.../@falabella/fdh/dist/<something>.js`.
+  // distFileUrl is `file:///.../@forge/fdh/dist/<something>.js`.
   const filePath = new URL(distFileUrl).pathname;
   const normalized =
     process.platform === "win32" && filePath.startsWith("/")

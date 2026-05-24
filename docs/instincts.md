@@ -28,7 +28,7 @@ id: 01HXY7K2QZ3M5R9TPVNBJ8D6F4         # ULID; lexicographically sortable by cap
 title: "When refactoring Go services, verify OTel trace IDs are still propagated"
 confidence: 0.8                          # 0.0–1.0 (manual; guide below)
 domain: backend-services-go              # free-form kebab-case taxonomy
-captured_by: dev@falabella.com           # from ~/.fdh/config.yaml or FDH_USER_EMAIL
+captured_by: dev@forge.com           # from ~/.fdh/config.yaml or FDH_USER_EMAIL
 captured_at: 2026-05-23T10:15:00Z
 context:
   project_hint: "checkout-service"       # basename of cwd at capture
@@ -187,7 +187,7 @@ All four are additive — the file format and command contracts won't change, ju
 
 ```sh
 # 1. Make sure your identity is set.
-export FDH_USER_EMAIL="${USER}@falabella.com"
+export FDH_USER_EMAIL="${USER}@forge.com"
 
 # 2. Capture interactively. Use a real pattern from today's work.
 fdh instinct capture

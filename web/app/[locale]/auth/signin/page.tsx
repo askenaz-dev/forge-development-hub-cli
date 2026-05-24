@@ -25,7 +25,7 @@ export default async function SignInPage({
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
           <CardDescription>
-            Use your Falabella identity to access authenticated portal features.
+            Use your forge identity to access authenticated portal features.
             Anonymous browsing of the catalog stays available without signing in.
           </CardDescription>
         </CardHeader>

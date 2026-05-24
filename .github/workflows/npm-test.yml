@@ -1,6 +1,6 @@
 name: npm wrapper tests
 
-# Tests the @falabella/fdh npm wrapper on the cross-product of:
+# Tests the @forge/fdh npm wrapper on the cross-product of:
 #   3 package managers × 3 OS × 1 Node LTS (18)  =  9 jobs
 #
 # We run on:

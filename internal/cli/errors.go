@@ -19,6 +19,7 @@ const (
 	ExitPortability     = 4 // portability lint failed
 	ExitNoAgent         = 5 // no agents detected (or none compatible)
 	ExitPermission      = 6 // filesystem permission denied
+	ExitValidation      = 7 // input validation failed (validate-registry)
 )
 
 // cliError wraps a regular error with a CLI exit code.

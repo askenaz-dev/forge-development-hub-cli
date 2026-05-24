@@ -1,7 +1,7 @@
 apiVersion: v2
 name: fdh-portal
 description: |
-  Helm chart that deploys the Falabella Development Hub portal — API + Web
+  Helm chart that deploys the forge Development Hub portal — API + Web
   fronted by a single Ingress, with optional Prometheus ServiceMonitor +
   OTel collector wiring.
 
@@ -13,11 +13,11 @@ version: 0.1.0
 appVersion: "0.1.0"
 keywords:
   - fdh
-  - falabella
+  - forge
   - agent-skills
   - portal
-home: https://fdh.falabella.internal
+home: https://fdh.forge.internal
 sources:
-  - https://github.com/falabella/fdh
+  - https://github.com/forge/fdh
 maintainers:
-  - name: Falabella Platform Engineering
+  - name: forge Platform Engineering

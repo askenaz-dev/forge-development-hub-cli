@@ -14,23 +14,23 @@ The npm wrapper's postinstall downloads the Go binary from `${FDH_PKG_HOST}`. Be
 
 ```ini
 # ~/.npmrc (or .npmrc at project root)
-https-proxy=http://corp-proxy.falabella.internal:8080
-proxy=http://corp-proxy.falabella.internal:8080
-noproxy=.falabella.internal,localhost
+https-proxy=http://corp-proxy.forge.internal:8080
+proxy=http://corp-proxy.forge.internal:8080
+noproxy=.forge.internal,localhost
 ```
 
 ### Configure via env vars (transient)
 
 ```sh
-export HTTPS_PROXY=http://corp-proxy.falabella.internal:8080
-export NO_PROXY=.falabella.internal,localhost
-npx @falabella/fdh init
+export HTTPS_PROXY=http://corp-proxy.forge.internal:8080
+export NO_PROXY=.forge.internal,localhost
+npx @forge/fdh init
 ```
 
 ```powershell
-$env:HTTPS_PROXY = "http://corp-proxy.falabella.internal:8080"
-$env:NO_PROXY = ".falabella.internal,localhost"
-npx @falabella/fdh init
+$env:HTTPS_PROXY = "http://corp-proxy.forge.internal:8080"
+$env:NO_PROXY = ".forge.internal,localhost"
+npx @forge/fdh init
 ```
 
 ## Install fails with `unable to verify the first certificate` / SSL errors
@@ -39,30 +39,30 @@ Your corporate proxy is doing TLS inspection — it re-signs HTTPS connections w
 
 ```sh
 # Set NODE_EXTRA_CA_CERTS to your corporate CA bundle (often `.pem` or `.crt`).
-export NODE_EXTRA_CA_CERTS=/path/to/falabella-corporate-ca.pem
-npx @falabella/fdh init
+export NODE_EXTRA_CA_CERTS=/path/to/forge-corporate-ca.pem
+npx @forge/fdh init
 ```
 
 ```powershell
-$env:NODE_EXTRA_CA_CERTS = "C:\path\to\falabella-corporate-ca.pem"
-npx @falabella/fdh init
+$env:NODE_EXTRA_CA_CERTS = "C:\path\to\forge-corporate-ca.pem"
+npx @forge/fdh init
 ```
 
 Permanent fix: add `NODE_EXTRA_CA_CERTS` to your shell profile. Some IT departments also configure `NPM_CONFIG_CAFILE`:
 
 ```ini
 # ~/.npmrc
-cafile=/path/to/falabella-corporate-ca.pem
+cafile=/path/to/forge-corporate-ca.pem
 ```
 
-## `fdh: binary not found at <path>; run 'npm rebuild @falabella/fdh' to repair`
+## `fdh: binary not found at <path>; run 'npm rebuild @forge/fdh' to repair`
 
 The postinstall script either skipped or failed. Repair:
 
 ```sh
-npm rebuild @falabella/fdh   # for npm-installed
-pnpm rebuild @falabella/fdh  # for pnpm
-yarn rebuild @falabella/fdh  # for yarn (where supported)
+npm rebuild @forge/fdh   # for npm-installed
+pnpm rebuild @forge/fdh  # for pnpm
+yarn rebuild @forge/fdh  # for yarn (where supported)
 ```
 
 If `rebuild` fails too, check that:
@@ -78,7 +78,7 @@ As a last resort, fall back to `install.sh` (POSIX) or `install.ps1` (Windows) �
 The matrix we ship covers: `darwin-arm64`, `darwin-amd64`, `linux-arm64`, `linux-amd64`, `windows-amd64`. If you need an additional target (e.g., `windows-arm64`, `linux-mips`, FreeBSD), contact `dx-platform` or build from source:
 
 ```sh
-git clone https://github.com/falabella/fdh
+git clone https://github.com/forge/fdh
 cd fdh
 go build -o ~/bin/fdh ./cmd/fdh
 ~/bin/fdh --version
@@ -88,11 +88,11 @@ go build -o ~/bin/fdh ./cmd/fdh
 
 ### pnpm
 
-`pnpm` installs to a content-addressable store and symlinks into `node_modules/.pnpm/`. The wrapper handles this correctly — the binary path is resolved relative to `import.meta.url` so symlinking doesn't break it. If `pnpm rebuild @falabella/fdh` doesn't work, try `pnpm install --shamefully-hoist`.
+`pnpm` installs to a content-addressable store and symlinks into `node_modules/.pnpm/`. The wrapper handles this correctly — the binary path is resolved relative to `import.meta.url` so symlinking doesn't break it. If `pnpm rebuild @forge/fdh` doesn't work, try `pnpm install --shamefully-hoist`.
 
 ### Yarn classic (1.x)
 
-Yarn classic's `--ignore-scripts` is global, not per-package. If you set it globally to avoid scripts from other packages, our postinstall is skipped too — set `FDH_SKIP_POSTINSTALL=0` (default) and run `yarn add @falabella/fdh` without `--ignore-scripts` once.
+Yarn classic's `--ignore-scripts` is global, not per-package. If you set it globally to avoid scripts from other packages, our postinstall is skipped too — set `FDH_SKIP_POSTINSTALL=0` (default) and run `yarn add @forge/fdh` without `--ignore-scripts` once.
 
 ### Yarn berry (2+) / PnP
 
@@ -105,7 +105,7 @@ nodeLinker: node-modules
 
 ### Bun
 
-Bun is detected but not officially supported. If `bun add @falabella/fdh` fails on the postinstall, fall back to `npm i -g @falabella/fdh` for now and file an issue.
+Bun is detected but not officially supported. If `bun add @forge/fdh` fails on the postinstall, fall back to `npm i -g @forge/fdh` for now and file an issue.
 
 ## Cache miss / `cache miss (sha256 differs)`
 

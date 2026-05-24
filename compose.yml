@@ -73,16 +73,33 @@ services:
       keycloak:
         condition: service_healthy
     environment:
-      # The browser hits Keycloak directly on the host; Auth.js' server side
-      # also runs inside this container and reaches Keycloak via the
-      # docker-network alias `keycloak`. The two URLs differ on purpose.
+      # The browser hits Keycloak at localhost:18088. The web container's
+      # own Node process can't reach `localhost:18088` (its localhost is
+      # itself), so we split the issuer URL (browser-facing, equal to
+      # the token `iss` claim) from the wellKnown discovery URL
+      # (container-reachable via `host.docker.internal`). In production
+      # both URLs point at the same DNS name (no split needed).
       AUTH_SECRET: "dev-secret-please-change-me-32bytes-or-more"
       AUTH_KEYCLOAK_ID: fdh-portal
       AUTH_KEYCLOAK_SECRET: dev-secret
-      AUTH_KEYCLOAK_ISSUER: http://localhost:18088/realms/fdh-dev
+      # Use host.docker.internal everywhere — Docker Desktop resolves it
+      # to the host's loopback both from inside containers AND from the
+      # browser (it's added to /etc/hosts automatically). One identical
+      # URL for the issuer + the JWKS endpoint + browser-facing
+      # authorize URL avoids the "split-host OIDC" issue entirely.
+      AUTH_KEYCLOAK_ISSUER: http://host.docker.internal:18088/realms/fdh-dev
       AUTH_TRUST_HOST: "true"
+      # Auth.js v5 reads AUTH_URL to know its public origin for redirects
+      # + the callback URL it advertises to Keycloak. Without it Auth.js
+      # falls back to HOSTNAME (0.0.0.0) which is wrong from the browser.
+      AUTH_URL: http://localhost:3000
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       FDH_API_BASE_URL: http://api:8080
+    extra_hosts:
+      # Linux dev environments don't always have host.docker.internal;
+      # this `host-gateway` magic value tells Docker to add it. On
+      # Docker Desktop (Mac, Windows) it's already there but doesn't hurt.
+      - "host.docker.internal:host-gateway"
     ports:
       - "3000:3000"
 
@@ -92,10 +109,14 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      # Keycloak 25+ takes a full URL for KC_HOSTNAME. We use
+      # host.docker.internal so both the browser (host context) and the
+      # web container (Docker context) hit the same URL and the issuer
+      # claim is identical for both — avoiding the split-host problem.
+      KC_HOSTNAME: http://host.docker.internal:18088
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
-      KC_HOSTNAME: localhost
-      KC_HOSTNAME_PORT: "18088"
+      KC_PROXY_HEADERS: xforwarded
     volumes:
       - ./compose/keycloak:/opt/keycloak/data/import:ro
     ports:

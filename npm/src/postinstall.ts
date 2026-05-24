@@ -49,7 +49,7 @@ function readPkgHost(env: NodeJS.ProcessEnv = process.env): string {
   return (
     env.FDH_PKG_HOST ??
     // Default placeholder until the platform team confirms the real host.
-    "pkg.falabella.internal"
+    "pkg.forge.internal"
   );
 }
 

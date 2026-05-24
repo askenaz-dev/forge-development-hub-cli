@@ -2,26 +2,32 @@
 
 ## What gets built
 
-`.github/workflows/release.yml` produces five release artifacts per tag:
+`.github/workflows/release.yml` invokes goreleaser (config:
+[`.goreleaser.yaml`](../.goreleaser.yaml)) on every `v*.*.*` tag push.
+Goreleaser produces, for each (os, arch) in the matrix:
 
-- `fdh-<version>-darwin-arm64.tar.gz` + `.sha256`
-- `fdh-<version>-darwin-amd64.tar.gz` + `.sha256`
-- `fdh-<version>-linux-arm64.tar.gz` + `.sha256`
-- `fdh-<version>-linux-amd64.tar.gz` + `.sha256`
-- `fdh-<version>-windows-amd64.tar.gz` + `.sha256`
+- `fdh_<version>_<os>_<arch>.tar.gz` (or `.zip` on Windows) + `.sha256`
+- `forge-installer_<version>_<os>_<arch>.tar.gz` (back-compat stub) + `.sha256`
+- `.deb` and `.rpm` packages for `linux/amd64` and `linux/arm64`
+- A Homebrew formula in `forge-internal/homebrew-tools` (when the
+  internal tap is wired — placeholder until task 1.4)
+- A winget manifest in `forge-internal/winget-pkgs` (same caveat)
 
-Each archive contains the binary, `LICENSE`, and `README.md`. Binaries are
-built with `-trimpath` and `CGO_ENABLED=0` so they are statically linked
-and reproducible across the matrix.
+The artifact-naming convention is part of the contract: `scripts/install.sh`
+and `scripts/install.ps1` resolve URLs against `fdh_<version>_<os>_<arch>.<ext>`.
+Renaming the pattern requires a corresponding update in both scripts and
+the manifest publisher.
 
 ## Build runner choice (Taskfile, not Make)
 
-The local `Taskfile.yml` and the CI workflow both use the [Task](https://taskfile.dev)
-runner. Reasons documented in `README.md`:
+The local `Taskfile.yml` uses the [Task](https://taskfile.dev) runner.
+CI uses goreleaser directly. Reasons:
 
 - single static binary on macOS, Linux, and Windows
 - identical syntax across all three platforms
 - no `make`-on-Windows friction for pilot devs
+- goreleaser already encodes the matrix + packaging + tap-publishing
+  steps; layering Task on top would duplicate the cross-build logic
 
 ## Versioning
 
@@ -32,29 +38,46 @@ the version string for ad-hoc builds.
 
 ## Distribution channel
 
-Released artifacts publish to Falabella's internal package manager.
-The build pipeline produces standard tar.gz + SHA-256 artifacts that any of
-the three candidate hosts can serve unchanged:
+Released artifacts publish to forge's internal package manager via
+the `publish` job in `release.yml`. The job:
 
-- **Nexus Repository (raw)** — `.tar.gz` and `.sha256` upload to a raw repo
-  via PUT, no per-format tooling needed.
-- **JFrog Artifactory (Generic)** — same shape, same upload flow.
+1. Downloads every artifact from the goreleaser job.
+2. Uploads binaries / packages first (per file, with HTTP PUT).
+3. Refreshes `${PKG_BASE_URL}/fdh/manifest.json` **last**. This is the
+   atomic switch: if any binary upload fails, the manifest still points
+   at the previous release and `install.sh`/`install.ps1` keep working.
+
+Hosts the artifact shape (tar.gz + zip + .sha256 + .deb + .rpm) supports
+unchanged:
+
+- **Nexus Repository (raw)** — PUT to a raw repo.
+- **JFrog Artifactory (Generic)** — same shape, same flow.
 - **GitHub Packages** — release-asset upload via `gh release upload`.
 
-The `publish-package-manager` job in `release.yml` is currently a
-placeholder. Once ops confirms the host, plug in the upload step:
+The publish step is gated on `PKG_BASE_URL`/`PKG_TOKEN` being set. With
+them unset (current pilot state), the goreleaser job still runs and
+artifacts land in CI cache, but nothing publishes — useful for testing
+the build matrix before the host is wired.
 
-```yaml
-- name: Publish to Nexus
-  env:
-    PKG_BASE_URL: ${{ vars.PKG_BASE_URL }}
-    PKG_TOKEN: ${{ secrets.PKG_TOKEN }}
-  run: |
-    for f in dist/*.tar.gz dist/*.sha256; do
-      curl -fsSL --user "$PKG_TOKEN" --upload-file "$f" \
-        "${PKG_BASE_URL}/fdh/$(basename "$f")"
-    done
+## `manifest.json` shape
+
+```json
+{
+  "latest": "v0.5.2",
+  "versions": {
+    "v0.5.2": {
+      "linux_amd64":   { "url": "fdh/v0.5.2/fdh_v0.5.2_linux_amd64.tar.gz",
+                         "sha256": "abcd..." },
+      "darwin_arm64":  { "url": "...", "sha256": "..." },
+      "windows_amd64": { "url": "...", "sha256": "..." }
+    },
+    "v0.5.1": { ... }
+  }
+}
 ```
+
+Install scripts parse the file with a regex (`install.sh`) or
+`Invoke-RestMethod` (`install.ps1`). No JSON parser dependency required.
 
 ## Pilot binaries: unsigned + checksum (Q2)
 

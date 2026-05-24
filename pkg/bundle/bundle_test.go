@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/falabella/fdh/pkg/bundle"
+	"github.com/forge/fdh/pkg/bundle"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

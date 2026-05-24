@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/falabella/fdh/pkg/bundle"
+	"github.com/forge/fdh/pkg/bundle"
 )
 
 // PortableAllowlist is the exact set of frontmatter keys permitted in a

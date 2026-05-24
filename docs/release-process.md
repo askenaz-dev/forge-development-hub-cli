@@ -1,6 +1,6 @@
 # Release process
 
-A `fdh` release is **atomic across two artifacts**: the cross-compiled Go binary and the `@falabella/fdh` npm package wrapping it. A single `git tag vX.Y.Z` triggers one pipeline that produces both with the **same version**. There are no independent cycles — `npm view @falabella/fdh version` always equals `fdh --version`.
+A `fdh` release is **atomic across two artifacts**: the cross-compiled Go binary and the `@forge/fdh` npm package wrapping it. A single `git tag vX.Y.Z` triggers one pipeline that produces both with the **same version**. There are no independent cycles — `npm view @forge/fdh version` always equals `fdh --version`.
 
 ## Anatomy of a release
 
@@ -38,7 +38,7 @@ A `fdh` release is **atomic across two artifacts**: the cross-compiled Go binary
 │  - npm version 0.7.2 --no-git-tag-version --allow-same-version          │
 │  - configure ~/.npmrc with NPM_INTERNAL_REGISTRY + token                │
 │  - npm publish --access restricted                                      │
-│  - Consumers: npx @falabella/fdh init  /  npm i -g @falabella/fdh       │
+│  - Consumers: npx @forge/fdh init  /  npm i -g @forge/fdh       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -68,7 +68,7 @@ When it's green, validate:
 
 ```sh
 fdh --version                          # the binary you have locally — may be old
-npm view @falabella/fdh version        # what the registry now offers
+npm view @forge/fdh version        # what the registry now offers
 curl -fsSL https://${FDH_PKG_HOST}/fdh/manifest.json | jq '.latest'
 ```
 
@@ -96,7 +96,7 @@ The `goreleaser` job builds artifacts. The `publish` job uploads them only if `P
 
 ## Things to know about the npm channel
 
-- **First publish prerequisite:** the internal registry (JFrog Artifactory Pro / Sonatype Nexus 3 OSS / GitLab Package Registry — see `openspec/changes/archive/.../fdh-cli-npm-distribution/design.md` for the decision tree) must be provisioned with a virtual repo named `npm-internal` (or equivalent) and scope `@falabella/`. Repo vars `NPM_INTERNAL_REGISTRY` (URL) and secret `NPM_INTERNAL_TOKEN` (token with publish rights) must be set on the Actions secrets page.
+- **First publish prerequisite:** the internal registry (JFrog Artifactory Pro / Sonatype Nexus 3 OSS / GitLab Package Registry — see `openspec/changes/archive/.../fdh-cli-npm-distribution/design.md` for the decision tree) must be provisioned with a virtual repo named `npm-internal` (or equivalent) and scope `@forge/`. Repo vars `NPM_INTERNAL_REGISTRY` (URL) and secret `NPM_INTERNAL_TOKEN` (token with publish rights) must be set on the Actions secrets page.
 - **Until those vars exist**, the `publish-npm` job runs `npm publish --dry-run` and prints the tarball contents — useful for verifying the file list (`dist/`, `README.md`) without actually publishing.
 - **Versioning is 1:1 with the Go binary always.** Never bump the npm package independently. If the wrapper has a bug fix that doesn't change the Go binary, bump both (patch) anyway. This keeps `npm view ... version === fdh --version` always true.
 - **`prepublishOnly` runs build + tests** before any publish — local `npm publish` from a dev machine is also safe.
@@ -107,7 +107,7 @@ If a bad release ships:
 
 ```sh
 # 1. Remove the bad version from npm (if published, within 72h):
-npm unpublish @falabella/fdh@<bad-version>
+npm unpublish @forge/fdh@<bad-version>
 
 # 2. Re-tag and re-release the previous good version:
 git tag v0.7.4 v0.7.2^{commit}      # if 0.7.3 was bad, tag 0.7.4 from 0.7.2
@@ -117,13 +117,13 @@ git push origin v0.7.4
 PKG_BASE_URL=https://... gh workflow run release.yml -f version=v0.7.4
 ```
 
-Consumers on the bad version: `npm rm -g @falabella/fdh && npm i -g @falabella/fdh@<good>`.
+Consumers on the bad version: `npm rm -g @forge/fdh && npm i -g @forge/fdh@<good>`.
 
 ## Validation checklist for each release
 
 - [ ] `gh run watch` is green for all jobs.
 - [ ] `fdh --version` (after `npm rebuild`) reports the new version.
-- [ ] `npm view @falabella/fdh version` matches.
+- [ ] `npm view @forge/fdh version` matches.
 - [ ] `curl ${PKG_BASE_URL}/fdh/manifest.json | jq .latest` matches.
 - [ ] Smoke-test on at least one of each OS in the matrix (darwin-arm64, linux-amd64, windows-amd64).
 - [ ] CHANGELOG entry added.

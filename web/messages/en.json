@@ -7,14 +7,14 @@
   },
   "landing": {
     "headline": "The skill hub for your development agents",
-    "subhead": "Falabella Development Hub centralizes, governs, and distributes Agent Skills for Claude Code, GitHub Copilot, OpenAI Codex, and OpenCode.",
+    "subhead": "forge Development Hub centralizes, governs, and distributes Agent Skills for Claude Code, GitHub Copilot, OpenAI Codex, and OpenCode.",
     "ctaInstall": "Install the CLI",
     "ctaBrowse": "Browse skills",
     "ctaSignIn": "Sign in",
     "feature1Title": "Multi-agent",
     "feature1Body": "One registry, four agents. Install a skill once and it appears in every tool you use.",
     "feature2Title": "Governed",
-    "feature2Body": "Falabella identity via Keycloak. Roles, audit, and per-team approvals.",
+    "feature2Body": "forge identity via Keycloak. Roles, audit, and per-team approvals.",
     "feature3Title": "Spec-compliant",
     "feature3Body": "Skills are 100% portable, following the open agentskills.io standard."
   },

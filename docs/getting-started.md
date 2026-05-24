@@ -8,8 +8,8 @@ the first time; bookmark the section index for later reference.
 
 - **Through the portal** (recommended for most developers) — browse
   skills, copy the install command, and follow the guided install flow.
-  Go to <https://fdh.falabella.internal> (or `http://localhost:3000` in
-  local dev). Sign in with your Falabella identity via Keycloak.
+  Go to <https://fdh.forge.internal> (or `http://localhost:3000` in
+  local dev). Sign in with your forge identity via Keycloak.
 - **Direct via the CLI** (the rail underneath the portal — also covered
   in this document). Use this when scripting onboarding setups or when
   the portal is unavailable.
@@ -55,7 +55,7 @@ git --version # any recent
 
 ```sh
 # clone the installer repo
-git clone https://github.com/falabella/fdh.git
+git clone https://github.com/forge/fdh.git
 cd skill-installer
 
 # build
@@ -86,7 +86,7 @@ place the binary on `PATH`. The full recipe is in
 ## 3. Bootstrap your skill registry
 
 A registry is a Git repository with a specific layout (see
-[`skill-bundle-and-registry`](../../falabella-development-hub/openspec/specs/skill-bundle-and-registry/spec.md)).
+[`skill-bundle-and-registry`](../../forge-development-hub/openspec/specs/skill-bundle-and-registry/spec.md)).
 Two ways to create one:
 
 ### Option A — Seed instantly with the 8 SDLC skills (recommended for a first run)
@@ -154,18 +154,41 @@ a `publish` command.
 
 ## 4. Connect the CLI to the registry
 
-```sh
-# Point the CLI at your local clone
-fdh config set registry.local_path /path/to/my-registry
+The shortest path is `fdh init` — one command that sets sensible defaults
+and runs `fdh doctor` at the end. Re-runnable; never destroys existing
+settings unless you pass `--force`.
 
-# (Later, once you've pushed the registry to a remote)
-fdh config set registry.url https://git.example/skills/registry.git
-fdh config set registry.branch main
+```sh
+# Use the org-wide default registry (configurable via FDH_DEFAULT_REGISTRY)
+fdh init
+
+# Or be explicit:
+fdh init --registry-url https://git.example/skills/registry.git
+fdh init --registry-local /path/to/my-local-registry
+fdh init --scope user           # or: project | auto (default)
 ```
 
-Confirm:
+Output:
+
+```
+fdh init
+  config:  /home/you/.config/fdh/config.yaml
+  applied:
+    registry.url       = https://git.example/skills/registry.git
+    defaults.scope     = auto
+  doctor:  OK (registry reachable, 3 agent(s) detected)
+
+Next steps:
+  fdh search <query>          # browse available skills
+  fdh install <ns>/<name>     # install one to all detected agents
+```
+
+If you'd rather poke at individual settings (or want to inspect what's
+there), the explicit form still works:
 
 ```sh
+fdh config set registry.url https://git.example/skills/registry.git
+fdh config set registry.branch main
 fdh config list
 ```
 
@@ -266,7 +289,7 @@ fdh install security/owasp-quick-review --json
 
 ## 7. Customize the seed skills
 
-The 8 seed skills are portable, Falabella-flavored starting points. You'll
+The 8 seed skills are portable, forge-flavored starting points. You'll
 almost certainly want to change them to match your team's conventions.
 
 For each skill you want to customize:
@@ -343,7 +366,7 @@ Once the registry is on a remote, a new teammate's full setup is:
 
 ```sh
 # 1. Install the CLI (build from source today, package manager later)
-git clone https://github.com/falabella/fdh.git
+git clone https://github.com/forge/fdh.git
 cd skill-installer
 go build -o ~/.local/bin/fdh ./cmd/fdh
 
@@ -404,5 +427,5 @@ These features are designed for the next changes; not in the current installer:
   → coming with `ops-readiness`.
 
 The full roadmap and order is in the project README and the archived
-[installer-core](../../falabella-development-hub/openspec/changes/archive/2026-05-22-installer-core/proposal.md)
+[installer-core](../../forge-development-hub/openspec/changes/archive/2026-05-22-installer-core/proposal.md)
 change.

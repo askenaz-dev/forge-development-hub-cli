@@ -12,10 +12,10 @@ import { getTranslations } from "next-intl/server";
  * commands first without any client-side JavaScript.
  *
  * Real release URLs come in once M10 has the package-manager target. For
- * now the URLs point at the placeholder host `pkg.falabella.internal`.
+ * now the URLs point at the placeholder host `pkg.forge.internal`.
  */
 const VERSION = process.env.NEXT_PUBLIC_FDH_VERSION ?? "v0.1.0";
-const PKG_HOST = process.env.NEXT_PUBLIC_FDH_PKG_HOST ?? "https://pkg.falabella.internal/fdh";
+const PKG_HOST = process.env.NEXT_PUBLIC_FDH_PKG_HOST ?? "https://pkg.forge.internal/fdh";
 
 type Platform = "macos-arm64" | "macos-amd64" | "linux-arm64" | "linux-amd64" | "windows-amd64";
 

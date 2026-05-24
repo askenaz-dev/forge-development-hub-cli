@@ -1,17 +1,17 @@
-# @falabella/fdh
+# @forge/fdh
 
-npm wrapper for the [Falabella Development Hub](https://github.com/falabella/fdh) CLI. The published package contains a thin TypeScript/JavaScript layer that downloads the right Go binary for the developer's platform at install time and dispatches to it at runtime.
+npm wrapper for the [forge Development Hub](https://github.com/forge/fdh) CLI. The published package contains a thin TypeScript/JavaScript layer that downloads the right Go binary for the developer's platform at install time and dispatches to it at runtime.
 
 ```bash
-npx @falabella/fdh init           # zero-install
-npm i -g @falabella/fdh           # persistent
+npx @forge/fdh init           # zero-install
+npm i -g @forge/fdh           # persistent
 ```
 
 ## How it works
 
 ```
        ┌────────────────────────────────────────────┐
-       │  npm i (or npx) @falabella/fdh             │
+       │  npm i (or npx) @forge/fdh             │
        └─────────────────┬──────────────────────────┘
                          │
                          ▼
@@ -39,14 +39,14 @@ npm i -g @falabella/fdh           # persistent
 
 ```
 npm/
-├── package.json           # name=@falabella/fdh, bin maps fdh + falabella-installer
+├── package.json           # name=@forge/fdh, bin maps fdh + forge-installer
 ├── tsconfig.json          # strict TS 5+, ES2022, Node16 modules
 ├── vitest.config.ts       # tests in tests/*.test.ts
 ├── .npmignore             # only dist/ ships
 ├── src/
 │   ├── lib.ts             # helpers: targets, proxy, download, sha256, extract
 │   ├── cli.ts             # entry for `fdh` binary
-│   ├── cli-alias.ts       # entry for `falabella-installer` (deprecation alias)
+│   ├── cli-alias.ts       # entry for `forge-installer` (deprecation alias)
 │   └── postinstall.ts     # downloads the Go binary into bin/
 ├── scripts/
 │   └── post-build-fixup.mjs   # adds shebang + chmod +x to dist/*.js
@@ -75,7 +75,7 @@ The npm package version always equals the underlying Go binary version. A single
 ## Local development
 
 ```bash
-cd C:/falabella/fdh/npm
+cd C:/forge/fdh/npm
 
 # Install dev deps
 npm install --ignore-scripts   # skip postinstall on dev install
@@ -87,13 +87,13 @@ npm run build
 npm test
 
 # Smoke test the wrapper without publishing
-FDH_PKG_HOST=pkg.falabella.internal node dist/postinstall.js
+FDH_PKG_HOST=pkg.forge.internal node dist/postinstall.js
 ./dist/cli.js --version
 ```
 
 ## See also
 
-- Hub-side spec: `openspec/specs/fdh-npm-wrapper/spec.md` in the falabella-development-hub.
+- Hub-side spec: `openspec/specs/fdh-npm-wrapper/spec.md` in the forge-development-hub.
 - Hub-side spec: `openspec/specs/fdh-cli-distribution/spec.md` (channel ordering).
 - Release process: `../docs/release-process.md`.
 - Troubleshooting (proxies, cert inspection): `../docs/troubleshooting.md`.

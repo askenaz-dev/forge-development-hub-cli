@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/falabella/fdh/pkg/adapters"
+	"github.com/forge/fdh/pkg/adapters"
 	"github.com/spf13/cobra"
 )
 

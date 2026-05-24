@@ -4,25 +4,25 @@ import { buildUrls } from "../src/postinstall.js";
 
 describe("buildUrls", () => {
   it("composes tarball + sha URLs from host + version + target using goreleaser convention", () => {
-    const u = buildUrls("artifactory.falabella.internal/api/raw/fdh-bin", "0.7.2", "darwin-arm64");
+    const u = buildUrls("artifactory.forge.internal/api/raw/fdh-bin", "0.7.2", "darwin-arm64");
     expect(u.tarballUrl).toBe(
-      "https://artifactory.falabella.internal/api/raw/fdh-bin/fdh/v0.7.2/fdh_v0.7.2_darwin_arm64.tar.gz",
+      "https://artifactory.forge.internal/api/raw/fdh-bin/fdh/v0.7.2/fdh_v0.7.2_darwin_arm64.tar.gz",
     );
     expect(u.shaUrl).toBe(
-      "https://artifactory.falabella.internal/api/raw/fdh-bin/fdh/v0.7.2/fdh_v0.7.2_darwin_arm64.tar.gz.sha256",
+      "https://artifactory.forge.internal/api/raw/fdh-bin/fdh/v0.7.2/fdh_v0.7.2_darwin_arm64.tar.gz.sha256",
     );
     expect(u.tarballName).toBe("fdh_v0.7.2_darwin_arm64.tar.gz");
   });
 
   it("strips https:// prefix from host if present", () => {
-    const u = buildUrls("https://pkg.falabella.internal", "1.0.0", "linux-amd64");
+    const u = buildUrls("https://pkg.forge.internal", "1.0.0", "linux-amd64");
     expect(u.tarballUrl).toBe(
-      "https://pkg.falabella.internal/fdh/v1.0.0/fdh_v1.0.0_linux_amd64.tar.gz",
+      "https://pkg.forge.internal/fdh/v1.0.0/fdh_v1.0.0_linux_amd64.tar.gz",
     );
   });
 
   it("strips trailing slash from host if present", () => {
-    const u = buildUrls("pkg.falabella.internal/", "1.0.0", "windows-amd64");
+    const u = buildUrls("pkg.forge.internal/", "1.0.0", "windows-amd64");
     expect(u.tarballUrl).not.toContain("//fdh/");
   });
 

@@ -1,6 +1,6 @@
 # fdh quickstart
 
-This guide walks a Falabella developer through installing the CLI, verifying their machine, and installing their first skill from the pilot registry.
+This guide walks a forge developer through installing the CLI, verifying their machine, and installing their first skill from the pilot registry.
 
 ## 1. Install `fdh`
 
@@ -10,15 +10,15 @@ Pick the channel that fits your machine. Most devs use **npm**.
 
 ```sh
 # Zero-install (one-off run, no PATH editing):
-npx @falabella/fdh init
+npx @forge/fdh init
 
 # Persistent install:
-npm i -g @falabella/fdh
+npm i -g @forge/fdh
 ```
 
 The npm package contains a tiny TypeScript wrapper that downloads the right Go binary for your platform (`darwin-arm64`, `darwin-amd64`, `linux-arm64`, `linux-amd64`, `windows-amd64`) on first install. Behind a corporate proxy? The postinstall honors `npm_config_https_proxy`, `HTTPS_PROXY`, and `NO_PROXY` — see [`troubleshooting.md`](./troubleshooting.md) for cert-inspection setups.
 
-> **Why npm?** Most Falabella devs already have Node installed (Claude Code, VS Code, frontend toolchain all depend on it). The npm channel sidesteps Authenticode/Gatekeeper warnings, ships a single artifact, and gives you `fdh upgrade` for free via `npm update -g`.
+> **Why npm?** Most forge devs already have Node installed (Claude Code, VS Code, frontend toolchain all depend on it). The npm channel sidesteps Authenticode/Gatekeeper warnings, ships a single artifact, and gives you `fdh upgrade` for free via `npm update -g`.
 
 ### Fallback — POSIX / PowerShell one-liner
 
@@ -47,15 +47,15 @@ sudo rpm -ivh fdh_<version>_linux_amd64.rpm          # Fedora / RHEL
 
 ```sh
 # When the internal tap is published:
-brew install falabella-internal/tools/fdh
+brew install forge-internal/tools/fdh
 
 # When the winget source is published:
-winget install Falabella.FDH
+winget install forge.FDH
 ```
 
 These channels are optional and unblocked by the npm channel being primary — they ship when the platform team has bandwidth, not as a prerequisite.
 
-> The placeholder `pkg.falabella.internal` is the default until platform confirms the real host. Set `FDH_PKG_HOST=<real-host>` in your environment to override (used by both the `install.sh` script and the npm wrapper).
+> The placeholder `pkg.forge.internal` is the default until platform confirms the real host. Set `FDH_PKG_HOST=<real-host>` in your environment to override (used by both the `install.sh` script and the npm wrapper).
 
 **Pilot note:** binaries are unsigned. The installers verify the SHA-256 for you. Signed releases land with the `ops-readiness` change. The npm channel sidesteps SmartScreen / Gatekeeper because the binary runs from `node_modules/`.
 
@@ -86,7 +86,7 @@ For CI (or any non-TTY context):
 
 ```sh
 fdh init \
-  --registry-url https://git.falabella.internal/skills/registry.git \
+  --registry-url https://git.forge.internal/skills/registry.git \
   --agents claude-code,codex \
   --skills design-system \
   --non-interactive
@@ -97,11 +97,11 @@ fdh init \
 If you prefer not to use the wizard:
 
 ```sh
-fdh config set registry.url https://git.falabella.internal/skills/registry.git
+fdh config set registry.url https://git.forge.internal/skills/registry.git
 fdh config set registry.branch main
 ```
 
-The registry is a regular Git repository laid out per the [bundle-and-registry spec](../../falabella-development-hub/openspec/specs/skill-bundle-and-registry/spec.md). You can also point at a local clone via `registry.local_path` for air-gapped use.
+The registry is a regular Git repository laid out per the [bundle-and-registry spec](../../forge-development-hub/openspec/specs/skill-bundle-and-registry/spec.md). You can also point at a local clone via `registry.local_path` for air-gapped use.
 
 ## 3. Run `doctor`
 

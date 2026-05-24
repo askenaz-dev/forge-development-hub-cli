@@ -11,7 +11,7 @@ version: "3"
 
 vars:
   BINARY: fdh
-  PKG: github.com/falabella/fdh
+  PKG: github.com/forge/fdh
   BIN_DIR: bin
   DIST_DIR: dist
   VERSION:

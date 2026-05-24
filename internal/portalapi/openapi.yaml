@@ -3,7 +3,7 @@ info:
   title: FDH Portal API
   version: "1.0.0"
   description: |
-    Read-only HTTP API serving the Falabella Development Hub skill registry
+    Read-only HTTP API serving the forge Development Hub skill registry
     to the portal frontend and other automation.
 
     The API is a thin JSON view over the Git-backed registry consumed via

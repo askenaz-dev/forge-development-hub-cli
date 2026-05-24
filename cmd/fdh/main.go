@@ -4,7 +4,7 @@
 // to four AI coding agents — Claude Code, GitHub Copilot, OpenAI Codex,
 // OpenCode — from a shared Git-backed skill registry.
 //
-// See the OpenSpec change `installer-core` in the falabella-development-hub
+// See the OpenSpec change `installer-core` in the forge-development-hub
 // repository for the requirements this CLI implements.
 package main
 
@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/falabella/fdh/internal/cli"
+	"github.com/forge/fdh/internal/cli"
 )
 
 // Build-time variables set via -ldflags during release.

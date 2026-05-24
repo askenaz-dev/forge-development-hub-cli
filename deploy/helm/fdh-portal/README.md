@@ -21,8 +21,8 @@ kubectl create configmap fdh-portal-role-map \
 # 3. Install the chart.
 helm upgrade --install fdh-portal ./deploy/helm/fdh-portal \
   --namespace fdh --create-namespace \
-  --set ingress.host=fdh.falabella.internal \
-  --set portal.registryURL=https://git.falabella.internal/skills/registry.git
+  --set ingress.host=fdh.forge.internal \
+  --set portal.registryURL=https://git.forge.internal/skills/registry.git
 ```
 
 ## Values

@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/falabella/fdh/pkg/bundle"
+	"github.com/forge/fdh/pkg/bundle"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -219,7 +219,7 @@ func (g *GitRegistry) FetchBundle(ctx context.Context, namespace, name, version 
 	}
 
 	// Extract into a temp dir.
-	tmp, err := os.MkdirTemp("", "falabella-bundle-*")
+	tmp, err := os.MkdirTemp("", "forge-bundle-*")
 	if err != nil {
 		return BundlePath{}, fmt.Errorf("mkdtemp: %w", err)
 	}

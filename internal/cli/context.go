@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/falabella/fdh/pkg/adapters"
-	"github.com/falabella/fdh/pkg/registry"
+	"github.com/forge/fdh/pkg/adapters"
+	"github.com/forge/fdh/pkg/registry"
 	"github.com/spf13/viper"
 )
 

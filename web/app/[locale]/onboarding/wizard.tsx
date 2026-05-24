@@ -202,12 +202,12 @@ function renderStep(step: number, os: DetectedOS) {
           <CardHeader>
             <CardTitle>4. Point fdh at the registry</CardTitle>
             <CardDescription>
-              Tell <code>fdh</code> where to read skills from. For Falabella,
+              Tell <code>fdh</code> where to read skills from. For forge,
               use the internal registry URL.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <CopyCommand command="fdh config set registry.url https://git.falabella.internal/skills/registry.git" />
+            <CopyCommand command="fdh config set registry.url https://git.forge.internal/skills/registry.git" />
             <p className="text-xs text-muted-foreground">
               For local development against the bundled fixture registry, use{" "}
               <code>fdh config set registry.local_path /path/to/registry</code>{" "}

@@ -55,7 +55,7 @@ func validInstinct(t *testing.T) *Instinct {
 		Title:      "When refactoring services, verify OTel trace IDs",
 		Confidence: 0.7,
 		Domain:     "backend-services-go",
-		CapturedBy: "dev@falabella.com",
+		CapturedBy: "dev@forge.com",
 		CapturedAt: time.Now().UTC(),
 		Context:    Context{ProjectHint: "checkout-service"},
 		Tags:       []string{"go", "observability", "refactor"},
