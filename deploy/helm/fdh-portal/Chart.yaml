@@ -1,13 +1,13 @@
 apiVersion: v2
 name: fdh-portal
 description: |
-  Helm chart that deploys the forge Development Hub portal — API + Web
+  Helm chart that deploys the Forge Development Hub portal — API + Web
   fronted by a single Ingress, with optional Prometheus ServiceMonitor +
   OTel collector wiring.
 
-  Keycloak is NOT deployed by this chart; the platform identity team
-  operates the canonical Keycloak. Configure the OIDC discovery URL and
-  client secret via values.yaml + a referenced Kubernetes Secret.
+  Keycloak is NOT deployed by this chart; consume an existing Keycloak by
+  configuring the OIDC discovery URL and client secret via values.yaml +
+  a referenced Kubernetes Secret.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
@@ -16,8 +16,10 @@ keywords:
   - forge
   - agent-skills
   - portal
-home: https://fdh.forge.internal
+  - askenaz
+home: https://fdh.askenaz.dev
 sources:
-  - https://github.com/forge/fdh
+  - https://github.com/askenaz-dev/forge-development-hub-cli
 maintainers:
-  - name: forge Platform Engineering
+  - name: askenaz
+    email: hi@askenaz.dev

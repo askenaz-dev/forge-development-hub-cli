@@ -3,22 +3,25 @@
 # fdh installer for macOS and Linux.
 #
 # Usage:
-#   curl -fsSL https://${FDH_PKG_HOST}/fdh/install.sh | bash
-#   curl -fsSL https://${FDH_PKG_HOST}/fdh/install.sh | bash -s -- --version v0.5.2
+#   curl -fsSL https://raw.githubusercontent.com/askenaz-dev/forge-development-hub-cli/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/askenaz-dev/forge-development-hub-cli/main/scripts/install.sh | bash -s -- --version v0.5.2
 #
 # Env vars:
-#   FDH_PKG_HOST   override the download host
-#                  (default: pkg.forge.internal — placeholder until
-#                  the platform team confirms the real host).
-#   FDH_INSTALL_DIR override the install directory
-#                  (default: $HOME/.fdh/bin).
+#   FDH_RELEASES_BASE  Base URL where the release assets live. Defaults to
+#                      the upstream GitHub Releases. Override to point at a
+#                      private mirror that follows the same per-tag layout
+#                      ($base/download/<tag>/<artifact>).
+#   FDH_LATEST_URL     URL returning JSON with a `tag_name` field for "latest".
+#                      Defaults to GitHub's API. Override when mirroring; the
+#                      response must be GitHub-Releases-API-shaped.
+#   FDH_INSTALL_DIR    Override the install directory (default: $HOME/.fdh/bin).
 #
 # Exit codes (stable):
 #   0  success
 #   1  generic error
 #   2  invalid usage
 #   3  unsupported OS/arch
-#   4  network error fetching manifest or binary
+#   4  network error fetching release info or binary
 #   5  checksum mismatch
 #
 # The script is idempotent: re-running with the same target version is a no-op
@@ -26,10 +29,13 @@
 
 set -euo pipefail
 
-# Stable defaults — the placeholder host is the contract-level default per
-# the fdh-cli-implementation-contract spec; the real host overrides via env.
-DEFAULT_HOST="pkg.forge.internal"
-FDH_PKG_HOST="${FDH_PKG_HOST:-${DEFAULT_HOST}}"
+# --- defaults ------------------------------------------------------------
+
+DEFAULT_RELEASES_BASE="https://github.com/askenaz-dev/forge-development-hub-cli/releases"
+DEFAULT_LATEST_URL="https://api.github.com/repos/askenaz-dev/forge-development-hub-cli/releases/latest"
+
+FDH_RELEASES_BASE="${FDH_RELEASES_BASE:-${DEFAULT_RELEASES_BASE}}"
+FDH_LATEST_URL="${FDH_LATEST_URL:-${DEFAULT_LATEST_URL}}"
 FDH_INSTALL_DIR="${FDH_INSTALL_DIR:-${HOME}/.fdh/bin}"
 VERSION="latest"
 
@@ -43,8 +49,11 @@ Usage:
   install.sh [--version <vX.Y.Z>] [--help]
 
 Env:
-  FDH_PKG_HOST    Override the download host (default: ${DEFAULT_HOST})
-  FDH_INSTALL_DIR Override install directory (default: \$HOME/.fdh/bin)
+  FDH_RELEASES_BASE  Override base URL for release assets
+                     (default: ${DEFAULT_RELEASES_BASE})
+  FDH_LATEST_URL     Override URL returning {"tag_name": "..."} for "latest"
+                     (default: ${DEFAULT_LATEST_URL})
+  FDH_INSTALL_DIR    Override install directory (default: \$HOME/.fdh/bin)
 EOF
 }
 
@@ -71,12 +80,7 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-if [[ "${FDH_PKG_HOST}" == "${DEFAULT_HOST}" ]]; then
-    echo "warning: FDH_PKG_HOST not set; using placeholder default '${DEFAULT_HOST}'." >&2
-    echo "         Set FDH_PKG_HOST to the real forge host before deploying." >&2
-fi
-
-# --- OS + arch detection (task 7.1) --------------------------------------
+# --- OS + arch detection -------------------------------------------------
 
 uname_s="$(uname -s)"
 uname_m="$(uname -m)"
@@ -126,30 +130,23 @@ sha256_of() {
     fi
 }
 
-# --- resolve version (task 7.3) ------------------------------------------
-
-manifest_url="https://${FDH_PKG_HOST}/fdh/manifest.json"
-manifest_json=""
-
-fetch_manifest() {
-    # `curl -fsSL` fails fast on HTTP errors and follows redirects.
-    if ! manifest_json="$(curl -fsSL "${manifest_url}")"; then
-        echo "error: could not fetch manifest at ${manifest_url}" >&2
-        exit 4
-    fi
-}
+# --- resolve version -----------------------------------------------------
 
 resolve_version() {
     if [[ "${VERSION}" != "latest" ]]; then
         return
     fi
-    fetch_manifest
-    # Tiny JSON parser; the manifest shape is:
-    #   { "latest": "v0.5.2", "versions": { ... } }
-    # We avoid jq to keep this script dependency-free.
-    VERSION="$(printf '%s' "${manifest_json}" | sed -n 's/.*"latest"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+    # The GitHub Releases API returns:
+    #   { "tag_name": "vX.Y.Z", "name": "...", "assets": [ ... ], ... }
+    # We extract `tag_name` without depending on jq.
+    local response
+    if ! response="$(curl -fsSL -H "Accept: application/vnd.github+json" "${FDH_LATEST_URL}")"; then
+        echo "error: could not fetch latest release info at ${FDH_LATEST_URL}" >&2
+        exit 4
+    fi
+    VERSION="$(printf '%s' "${response}" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
     if [[ -z "${VERSION}" ]]; then
-        echo "error: manifest does not declare a 'latest' field" >&2
+        echo "error: latest release info does not declare a 'tag_name'" >&2
         exit 4
     fi
 }
@@ -158,30 +155,25 @@ resolve_version
 
 # --- discover artifact URLs ---------------------------------------------
 
-# Convention published by .goreleaser.yaml + the manifest publisher:
-#   /fdh/<version>/fdh_<version>_<os>_<arch>.tar.gz
-#   /fdh/<version>/fdh_<version>_<os>_<arch>.tar.gz.sha256
-# Versions in the URL keep the leading "v".
+# Convention emitted by .goreleaser.yaml:
+#   ${FDH_RELEASES_BASE}/download/<tag>/fdh_<tag>_<os>_<arch>.tar.gz
+#   ${FDH_RELEASES_BASE}/download/<tag>/fdh_<tag>_<os>_<arch>.tar.gz.sha256
 artifact="fdh_${VERSION}_${os}_${arch}.tar.gz"
-url_base="https://${FDH_PKG_HOST}/fdh/${VERSION}"
-artifact_url="${url_base}/${artifact}"
+artifact_url="${FDH_RELEASES_BASE}/download/${VERSION}/${artifact}"
 sha_url="${artifact_url}.sha256"
 
 echo "fdh installer"
-echo "  target:   ${target}"
-echo "  version:  ${VERSION}"
-echo "  host:     ${FDH_PKG_HOST}"
-echo "  install:  ${FDH_INSTALL_DIR}"
+echo "  target:    ${target}"
+echo "  version:   ${VERSION}"
+echo "  releases:  ${FDH_RELEASES_BASE}"
+echo "  install:   ${FDH_INSTALL_DIR}"
 
-# --- idempotency check (task 7.8) ----------------------------------------
+# --- idempotency check ---------------------------------------------------
 
 bin_path="${FDH_INSTALL_DIR}/fdh"
 
 if [[ -f "${bin_path}" ]]; then
     expected_sha="$(curl -fsSL "${sha_url}" 2>/dev/null | awk '{print $1}' || true)"
-    # The .sha256 file's content is the hash of the .tar.gz, not the binary
-    # itself. Compare hashes only when we have a recent local copy of the
-    # tarball — otherwise just trust the binary check below to re-download.
     if [[ -n "${expected_sha}" && -f "${FDH_INSTALL_DIR}/.last-tarball-sha256" ]]; then
         if [[ "$(cat "${FDH_INSTALL_DIR}/.last-tarball-sha256")" == "${expected_sha}" ]]; then
             echo "already up-to-date: ${bin_path}"
@@ -190,7 +182,7 @@ if [[ -f "${bin_path}" ]]; then
     fi
 fi
 
-# --- download + verify + extract (tasks 7.4, 7.5) ------------------------
+# --- download + verify + extract ----------------------------------------
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
@@ -238,7 +230,7 @@ install -m 0755 "${extracted_bin}" "${bin_path}"
 printf '%s\n' "${expected_sha}" > "${FDH_INSTALL_DIR}/.last-tarball-sha256"
 echo "installed ${bin_path}"
 
-# --- PATH editing (tasks 7.6, 7.7) ---------------------------------------
+# --- PATH editing --------------------------------------------------------
 
 path_line='export PATH="$HOME/.fdh/bin:$PATH"'
 
@@ -250,8 +242,6 @@ case "${shell_name}" in
         rc_file="${HOME}/.zshrc"
         ;;
     bash)
-        # Linux conventionally uses .bashrc; macOS bash users sometimes have
-        # .bash_profile. Prefer whichever exists; default to .bashrc.
         if [[ -f "${HOME}/.bashrc" ]]; then
             rc_file="${HOME}/.bashrc"
         elif [[ -f "${HOME}/.bash_profile" ]]; then
@@ -280,7 +270,7 @@ if [[ -f "${rc_file}" ]] && grep -F -q '/.fdh/bin' "${rc_file}"; then
 else
     {
         echo ""
-        echo "# Added by fdh installer (https://${FDH_PKG_HOST}/fdh/install.sh)"
+        echo "# Added by fdh installer (https://github.com/askenaz-dev/forge-development-hub-cli)"
         echo "${path_line}"
     } >> "${rc_file}"
     echo "added PATH entry to ${rc_file}"

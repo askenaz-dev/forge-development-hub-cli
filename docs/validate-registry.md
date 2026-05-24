@@ -119,7 +119,7 @@ To switch the hub's CI:
 # .github/workflows/validate-registry.yml — proposed
 - uses: actions/checkout@v4
 - name: Install fdh
-  run: curl -fsSL https://${{ vars.FDH_PKG_HOST }}/fdh/install.sh | bash
+  run: curl -fsSL https://${{ vars.FDH_RELEASES_BASE }}/fdh/install.sh | bash
 - name: Validate registry
   run: fdh validate-registry .
 ```

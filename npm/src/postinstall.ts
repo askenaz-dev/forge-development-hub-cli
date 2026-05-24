@@ -1,8 +1,9 @@
 // postinstall.ts — runs synchronously during `npm install` / `npx` / `pnpm add`
 // / `yarn add`. Detects the host's platform+arch, downloads the matching Go
-// binary from $FDH_PKG_HOST, verifies SHA-256, and extracts to bin/ inside
-// this package. Cache-hit aware: if the binary already exists with the right
-// checksum, it skips the network entirely.
+// binary from GitHub Releases (or $FDH_RELEASES_BASE if overridden for a
+// private mirror), verifies SHA-256, and extracts to bin/ inside this package.
+// Cache-hit aware: if the binary already exists with the right checksum, it
+// skips the network entirely.
 //
 // Honors corporate proxies (npm_config_https_proxy → HTTPS_PROXY → direct)
 // and NO_PROXY.
@@ -45,12 +46,12 @@ function readPkgVersion(packageRoot: string): string {
   return parsed.version;
 }
 
-function readPkgHost(env: NodeJS.ProcessEnv = process.env): string {
-  return (
-    env.FDH_PKG_HOST ??
-    // Default placeholder until the platform team confirms the real host.
-    "pkg.forge.internal"
-  );
+/** Default GitHub Releases base for the upstream repo. */
+const DEFAULT_RELEASES_BASE =
+  "https://github.com/askenaz-dev/forge-development-hub-cli/releases";
+
+function readReleasesBase(env: NodeJS.ProcessEnv = process.env): string {
+  return env.FDH_RELEASES_BASE ?? DEFAULT_RELEASES_BASE;
 }
 
 interface DownloadPaths {
@@ -62,24 +63,33 @@ interface DownloadPaths {
 /**
  * Build the URLs to download the binary tarball + its SHA-256 sidecar.
  *
- * Matches the convention used by the existing goreleaser pipeline and the
- * `publish` job in `.github/workflows/release.yml`:
+ * Matches the convention used by goreleaser uploading to GitHub Releases:
  *
- *   https://<host>/fdh/v<version>/fdh_v<version>_<os>_<arch>.tar.gz
- *   https://<host>/fdh/v<version>/fdh_v<version>_<os>_<arch>.tar.gz.sha256
+ *   <releases-base>/download/v<version>/fdh_v<version>_<os>_<arch>.tar.gz
+ *   <releases-base>/download/v<version>/fdh_v<version>_<os>_<arch>.tar.gz.sha256
  *
  * Targets like `darwin-arm64` map to filename segment `darwin_arm64`.
+ *
+ * `releasesBase` may include or omit the protocol; it is normalized.
+ * Private mirrors that follow the same per-tag layout can override
+ * FDH_RELEASES_BASE to point here.
  */
-function buildUrls(host: string, version: string, target: SupportedTarget): DownloadPaths {
-  const cleanHost = host.replace(/^https?:\/\//, "").replace(/\/$/, "");
+function buildUrls(releasesBase: string, version: string, target: SupportedTarget): DownloadPaths {
+  // Allow callers to pass either a full URL ("https://github.com/.../releases")
+  // or a bare host ("pkg.example.com") — normalize to a https:// URL with no
+  // trailing slash.
+  let base = releasesBase.replace(/\/$/, "");
+  if (!/^https?:\/\//.test(base)) {
+    base = `https://${base}`;
+  }
   const cleanVer = version.replace(/^v/, ""); // canonical: 0.7.2
   const tag = `v${cleanVer}`; // canonical: v0.7.2
   const filenameTarget = target.replace("-", "_"); // darwin-arm64 → darwin_arm64
   const tarballName = `fdh_${tag}_${filenameTarget}.tar.gz`;
-  const base = `https://${cleanHost}/fdh/${tag}`;
+  const downloadBase = `${base}/download/${tag}`;
   return {
-    tarballUrl: `${base}/${tarballName}`,
-    shaUrl: `${base}/${tarballName}.sha256`,
+    tarballUrl: `${downloadBase}/${tarballName}`,
+    shaUrl: `${downloadBase}/${tarballName}.sha256`,
     tarballName,
   };
 }
@@ -97,7 +107,7 @@ async function main(): Promise<void> {
 
   const packageRoot = packageRootFromDist(import.meta.url);
   const version = readPkgVersion(packageRoot);
-  const pkgHost = readPkgHost();
+  const releasesBase = readReleasesBase();
 
   let target: SupportedTarget;
   try {
@@ -113,7 +123,7 @@ async function main(): Promise<void> {
   const binDir = resolveBinDir(packageRoot);
   const binPath = path.join(binDir, binaryFilename(target));
 
-  const { tarballUrl, shaUrl, tarballName } = buildUrls(pkgHost, version, target);
+  const { tarballUrl, shaUrl, tarballName } = buildUrls(releasesBase, version, target);
   const pm = detectPackageManager();
 
   const banner = `fdh postinstall (${pm}): target=${target} version=v${version.replace(/^v/, "")}`;
@@ -164,7 +174,7 @@ async function main(): Promise<void> {
       console.error(err.message);
       console.error(
         `\nTroubleshooting:\n` +
-          `  • Verify FDH_PKG_HOST is set (current: ${pkgHost}).\n` +
+          `  • Releases base: ${releasesBase} (override with FDH_RELEASES_BASE for mirrors).\n` +
           `  • Check your proxy: HTTP(S)_PROXY=${process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY ?? "<unset>"}, NO_PROXY=${process.env.NO_PROXY ?? "<unset>"}.\n` +
           `  • Behind a corporate cert-inspection proxy? Set NODE_EXTRA_CA_CERTS to your CA bundle.\n` +
           `  • See docs/troubleshooting.md.`,

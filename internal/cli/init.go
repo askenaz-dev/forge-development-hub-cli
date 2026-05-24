@@ -15,11 +15,10 @@ import (
 
 // defaultPilotRegistry is the registry source the `init` command suggests
 // when none has been configured yet AND no flag/env override was given.
-// forge's production registry URL is set via FDH_DEFAULT_REGISTRY at
-// distribution time (Helm values, package-manager wrapper script, etc.);
-// the hard-coded fallback below points at the Git remote the platform
-// team intends to provision. Edit it when the real URL is confirmed.
-const defaultPilotRegistry = "https://git.forge.internal/skills/registry.git"
+// The production registry URL can be overridden via FDH_DEFAULT_REGISTRY
+// at distribution time (Helm values, package-manager wrapper script, etc.);
+// the hard-coded fallback below points at the public askenaz-dev hub repo.
+const defaultPilotRegistry = "https://github.com/askenaz-dev/forge-development-hub.git"
 
 // InitResult is the JSON shape emitted by `init --json`.
 //

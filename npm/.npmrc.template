@@ -1,33 +1,31 @@
-# .npmrc template for installing @forge/fdh and other @forge/* packages.
+# .npmrc template for installing @askenaz-dev/fdh from a private registry.
+#
+# The default registry is https://registry.npmjs.org/ (public). You only need
+# this file if you want to publish/install from an alternate registry like
+# GitHub Packages, JFrog Artifactory, Sonatype Nexus, or Verdaccio.
 #
 # Copy to your project root as `.npmrc` (or to `~/.npmrc` for user-wide) and
 # fill in the placeholders below. DO NOT commit a `.npmrc` with a real token.
-#
-# Once configured:
-#   npm i -g @forge/fdh
-#   npx @forge/fdh init
 
-# Point @forge scope at the internal registry.
-# Replace <REGISTRY-HOST> with the value confirmed by the platform team.
+# Point @askenaz-dev scope at an alternate registry.
 # Examples:
-#   - JFrog Artifactory:  https://artifactory.forge.internal/api/npm/npm-internal/
-#   - Sonatype Nexus 3:   https://nexus.forge.internal/repository/npm-internal/
-#   - GitLab Package:     https://gitlab.forge.internal/api/v4/groups/<group-id>/-/packages/npm/
-@forge:registry=https://<REGISTRY-HOST>/
+#   - GitHub Packages:    https://npm.pkg.github.com/
+#   - JFrog Artifactory:  https://artifactory.askenaz.dev/api/npm/npm-internal/
+#   - Sonatype Nexus 3:   https://nexus.askenaz.dev/repository/npm-internal/
+#   - Verdaccio:          https://npm.askenaz.dev/
+@askenaz-dev:registry=https://<REGISTRY-HOST>/
 
-# Auth: use a corporate token with read access to the npm-internal repo.
+# Auth: use a token with read (or publish) access.
 # Strip protocol from the URL for the auth key (npm convention).
-# Replace <REGISTRY-HOST> with the same host above, and <YOUR_TOKEN> with
-# your token (or use an env-var expansion like `${forge_NPM_TOKEN}`).
 //<REGISTRY-HOST>/:_authToken=<YOUR_TOKEN>
 
 # Always send auth (required when the registry rejects anonymous requests).
 always-auth=true
 
 # If your corporate proxy does TLS inspection, point npm at the corporate CA:
-# cafile=/path/to/forge-corporate-ca.pem
+# cafile=/path/to/corporate-ca.pem
 #
-# Proxy settings (also honored by @forge/fdh's postinstall):
-# https-proxy=http://corp-proxy.forge.internal:8080
-# proxy=http://corp-proxy.forge.internal:8080
-# noproxy=.forge.internal,localhost
+# Proxy settings (also honored by @askenaz-dev/fdh's postinstall):
+# https-proxy=http://corp-proxy.example.com:8080
+# proxy=http://corp-proxy.example.com:8080
+# noproxy=.askenaz.dev,localhost

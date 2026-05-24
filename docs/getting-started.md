@@ -8,7 +8,7 @@ the first time; bookmark the section index for later reference.
 
 - **Through the portal** (recommended for most developers) — browse
   skills, copy the install command, and follow the guided install flow.
-  Go to <https://fdh.forge.internal> (or `http://localhost:3000` in
+  Go to <https://fdh.askenaz.dev> (or `http://localhost:3000` in
   local dev). Sign in with your forge identity via Keycloak.
 - **Direct via the CLI** (the rail underneath the portal — also covered
   in this document). Use this when scripting onboarding setups or when

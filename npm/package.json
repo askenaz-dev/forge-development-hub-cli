@@ -1,14 +1,14 @@
 {
-  "name": "@forge/fdh",
+  "name": "@askenaz-dev/fdh",
   "version": "0.0.0",
-  "description": "forge Development Hub CLI — npm wrapper for the Go binary. Zero runtime dependencies.",
-  "homepage": "https://github.com/forge/fdh",
+  "description": "Forge Development Hub CLI — npm wrapper for the Go binary. Zero runtime dependencies.",
+  "homepage": "https://github.com/askenaz-dev/forge-development-hub-cli",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/forge/fdh.git",
+    "url": "git+https://github.com/askenaz-dev/forge-development-hub-cli.git",
     "directory": "npm"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": false,
   "type": "module",
   "engines": {
@@ -22,6 +22,10 @@
     "dist/",
     "README.md"
   ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/post-build-fixup.mjs",
     "test": "vitest run",

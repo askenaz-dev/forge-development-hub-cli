@@ -11,11 +11,14 @@ import { getTranslations } from "next-intl/server";
  * pick the default-active tab so a Windows visitor sees the Windows
  * commands first without any client-side JavaScript.
  *
- * Real release URLs come in once M10 has the package-manager target. For
- * now the URLs point at the placeholder host `pkg.forge.internal`.
+ * The download URLs point at GitHub Releases on
+ * askenaz-dev/forge-development-hub-cli. Override at build time with
+ * NEXT_PUBLIC_FDH_RELEASES_BASE if hosting a private mirror.
  */
 const VERSION = process.env.NEXT_PUBLIC_FDH_VERSION ?? "v0.1.0";
-const PKG_HOST = process.env.NEXT_PUBLIC_FDH_PKG_HOST ?? "https://pkg.forge.internal/fdh";
+const PKG_HOST =
+  process.env.NEXT_PUBLIC_FDH_RELEASES_BASE ??
+  "https://github.com/askenaz-dev/forge-development-hub-cli/releases/download";
 
 type Platform = "macos-arm64" | "macos-amd64" | "linux-arm64" | "linux-amd64" | "windows-amd64";
 
