@@ -1,8 +1,8 @@
 # goreleaser config for fdh.
 #
-# Goal: produce signed-once-ready binaries + Linux packages + a Homebrew
-# formula + a winget manifest, all from a single tag push, with a stable
-# artifact-naming convention the install scripts depend on.
+# Goal: produce cross-compiled binaries + Linux packages, publish them as
+# assets on GitHub Releases, with a stable artifact-naming convention the
+# install scripts depend on.
 #
 # Artifact naming convention (matched by scripts/install.sh and install.ps1):
 #   fdh_<version>_<os>_<arch>.tar.gz   (Linux, macOS)
@@ -11,18 +11,15 @@
 #   the `checksum:` block below.
 #
 # Distribution targets:
-#   - Internal Artifactory/Nexus/etc (via the release.yml workflow's
-#     `publish-package-manager` job, using the host configured by
-#     `vars.PKG_BASE_URL`).
-#   - Homebrew tap (placeholder; update repo name when task 1.4 lands).
-#   - winget source (placeholder; update identifier when task 1.4 lands).
-#   - Linux .deb / .rpm via nfpm.
+#   - GitHub Releases (default, published by `goreleaser release --clean`).
+#     install.sh / install.ps1 / the npm postinstall all read from there.
+#   - Linux .deb / .rpm via nfpm, uploaded as release assets.
 #
-# What's NOT here:
+# What's NOT here (intentionally — add back when ready to maintain them):
+#   - Homebrew tap.
+#   - winget manifest.
 #   - Authenticode signing (Windows) and Apple Developer ID notarization
-#     (macOS) — pending platform confirmation (task 1.5). When the certs
-#     are available, add `signs:` and `notarize:` stanzas referencing
-#     them via secrets in CI.
+#     (macOS) — add `signs:` and `notarize:` when the certs are available.
 
 version: 2
 
@@ -120,10 +117,10 @@ nfpms:
     file_name_template: "fdh_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     ids:
       - fdh
-    homepage: https://fdh.forge.internal
-    maintainer: forge Developer Productivity <dx@forge.internal>
+    homepage: https://github.com/askenaz-dev/forge-development-hub-cli
+    maintainer: askenaz <hi@askenaz.dev>
     description: |
-      fdh — forge Development Hub CLI.
+      fdh — Forge Development Hub CLI.
       Installs Agent Skills across Claude Code, Copilot, Codex, and OpenCode
       from the central skill registry.
     license: MIT
@@ -136,55 +133,12 @@ nfpms:
         dst: /usr/local/bin/fdh
         type: symlink
 
-# Homebrew tap — placeholder. Update `repository.name` and possibly
-# `repository.owner` when the internal tap is confirmed (task 1.4).
-brews:
-  - name: fdh
-    ids:
-      - fdh
-    repository:
-      owner: forge-internal
-      name: homebrew-tools
-      # The token is wired in CI as HOMEBREW_TAP_TOKEN; goreleaser reads
-      # it from env when present.
-      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: https://fdh.forge.internal
-    description: "forge Development Hub CLI"
-    license: MIT
-    # The download URL substitution uses the same artifact-naming convention
-    # as the install scripts. `download_strategy` keeps it on the internal
-    # host, not GitHub Releases.
-    skip_upload: auto # produces the formula but does NOT push when running locally; CI overrides.
-    install: |
-      bin.install "fdh"
-    test: |
-      system "#{bin}/fdh", "--version"
-
-# winget manifest — placeholder. Update `name` and `publisher` when the
-# internal source is confirmed (task 1.4).
-winget:
-  - name: fdh
-    publisher: forge
-    short_description: "forge Development Hub CLI"
-    license: MIT
-    homepage: https://fdh.forge.internal
-    ids:
-      - fdh
-    repository:
-      owner: forge-internal
-      name: winget-pkgs
-      token: "{{ .Env.WINGET_TAP_TOKEN }}"
-    publisher_url: https://fdh.forge.internal
-    publisher_support_url: https://fdh.forge.internal/support
-    package_identifier: forge.FDH
-    skip_upload: auto
-
 release:
-  # The platform's internal package manager (Artifactory/Nexus/etc) is
-  # where binaries actually land; GH Releases (when this repo is on
-  # GitHub Enterprise) gets the changelog + the artifacts as a backup.
+  # Publish to GitHub Releases on askenaz-dev/forge-development-hub-cli.
+  # install.sh, install.ps1 and the npm postinstall all resolve assets
+  # from there by default.
   github:
-    owner: forge
-    name: fdh
+    owner: askenaz-dev
+    name: forge-development-hub-cli
   draft: false
   prerelease: auto

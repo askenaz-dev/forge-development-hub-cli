@@ -1,6 +1,6 @@
 # fdh quickstart
 
-This guide walks a forge developer through installing the CLI, verifying their machine, and installing their first skill from the pilot registry.
+This guide walks a developer through installing the CLI, verifying their machine, and installing their first skill from the askenaz-dev hub.
 
 ## 1. Install `fdh`
 
@@ -10,15 +10,15 @@ Pick the channel that fits your machine. Most devs use **npm**.
 
 ```sh
 # Zero-install (one-off run, no PATH editing):
-npx @forge/fdh init
+npx @askenaz-dev/fdh init
 
 # Persistent install:
-npm i -g @forge/fdh
+npm i -g @askenaz-dev/fdh
 ```
 
 The npm package contains a tiny TypeScript wrapper that downloads the right Go binary for your platform (`darwin-arm64`, `darwin-amd64`, `linux-arm64`, `linux-amd64`, `windows-amd64`) on first install. Behind a corporate proxy? The postinstall honors `npm_config_https_proxy`, `HTTPS_PROXY`, and `NO_PROXY` — see [`troubleshooting.md`](./troubleshooting.md) for cert-inspection setups.
 
-> **Why npm?** Most forge devs already have Node installed (Claude Code, VS Code, frontend toolchain all depend on it). The npm channel sidesteps Authenticode/Gatekeeper warnings, ships a single artifact, and gives you `fdh upgrade` for free via `npm update -g`.
+> **Why npm?** Most devs already have Node installed (Claude Code, VS Code, frontend toolchain all depend on it). The npm channel sidesteps Authenticode/Gatekeeper warnings, ships a single artifact, and gives you `fdh upgrade` for free via `npm update -g`.
 
 ### Fallback — POSIX / PowerShell one-liner
 
@@ -26,12 +26,12 @@ For environments without Node (headless servers, minimal containers, air-gapped 
 
 ```sh
 # macOS / Linux
-curl -fsSL https://${FDH_PKG_HOST}/fdh/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/askenaz-dev/forge-development-hub-cli/main/scripts/install.sh | bash
 ```
 
 ```powershell
 # Windows
-iwr https://${env:FDH_PKG_HOST}/fdh/install.ps1 | iex
+iwr https://raw.githubusercontent.com/askenaz-dev/forge-development-hub-cli/main/scripts/install.ps1 | iex
 ```
 
 Full details and overrides are in [`install.md`](./install.md).
@@ -39,6 +39,7 @@ Full details and overrides are in [`install.md`](./install.md).
 ### Fallback — Linux native packages
 
 ```sh
+# Download the .deb / .rpm asset from the latest GitHub Release, then:
 sudo apt install ./fdh_<version>_linux_amd64.deb     # Debian / Ubuntu
 sudo rpm -ivh fdh_<version>_linux_amd64.rpm          # Fedora / RHEL
 ```
@@ -46,18 +47,18 @@ sudo rpm -ivh fdh_<version>_linux_amd64.rpm          # Fedora / RHEL
 ### Coming later — Homebrew tap + winget
 
 ```sh
-# When the internal tap is published:
-brew install forge-internal/tools/fdh
+# When a tap is published:
+brew install askenaz-dev/tap/fdh
 
-# When the winget source is published:
-winget install forge.FDH
+# When a winget source is published:
+winget install askenaz.FDH
 ```
 
-These channels are optional and unblocked by the npm channel being primary — they ship when the platform team has bandwidth, not as a prerequisite.
+These channels are optional and unblocked by the npm channel being primary.
 
-> The placeholder `pkg.forge.internal` is the default until platform confirms the real host. Set `FDH_PKG_HOST=<real-host>` in your environment to override (used by both the `install.sh` script and the npm wrapper).
+> Override the binary host with `FDH_RELEASES_BASE` and `FDH_LATEST_URL` if you want to install from a private mirror.
 
-**Pilot note:** binaries are unsigned. The installers verify the SHA-256 for you. Signed releases land with the `ops-readiness` change. The npm channel sidesteps SmartScreen / Gatekeeper because the binary runs from `node_modules/`.
+**Pilot note:** binaries are unsigned. The installers verify the SHA-256 for you. The npm channel sidesteps SmartScreen / Gatekeeper because the binary runs from `node_modules/`.
 
 Confirm the install:
 
@@ -86,18 +87,18 @@ For CI (or any non-TTY context):
 
 ```sh
 fdh init \
-  --registry-url https://git.forge.internal/skills/registry.git \
+  --registry-url https://github.com/askenaz-dev/forge-development-hub.git \
   --agents claude-code,codex \
   --skills design-system \
   --non-interactive
 ```
 
-## 2b. Or point at the pilot registry manually (legacy)
+## 2b. Or point at the hub manually
 
 If you prefer not to use the wizard:
 
 ```sh
-fdh config set registry.url https://git.forge.internal/skills/registry.git
+fdh config set registry.url https://github.com/askenaz-dev/forge-development-hub.git
 fdh config set registry.branch main
 ```
 

@@ -1,16 +1,16 @@
 # Default values for fdh-portal.
 #
 # Production deploys override:
-#   - image tags (api.image.tag, web.image.tag)
-#   - ingress.host (e.g. fdh.forge.internal)
-#   - portal.registryURL (the production registry Git URL)
-#   - oidc.* (the production Keycloak)
+#   - image tags (api.image.tag, web.image.tag) if you don't want appVersion
+#   - ingress.host (defaults to fdh.askenaz.dev)
+#   - portal.registryURL (defaults to the askenaz-dev hub repo)
+#   - oidc.* (defaults to keycloak.askenaz.dev / realm `askenaz`)
 #   - oidc.clientSecretRef (Kubernetes Secret name + key)
 
 api:
   replicaCount: 2
   image:
-    repository: pkg.forge.internal/fdh/fdh-portal-api
+    repository: ghcr.io/askenaz-dev/fdh-portal-api
     tag: ""           # empty -> chart appVersion
     pullPolicy: IfNotPresent
   resources:
@@ -29,7 +29,7 @@ api:
 web:
   replicaCount: 2
   image:
-    repository: pkg.forge.internal/fdh/fdh-portal-web
+    repository: ghcr.io/askenaz-dev/fdh-portal-web
     tag: ""
     pullPolicy: IfNotPresent
   resources:
@@ -45,20 +45,29 @@ web:
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
 
+# Optional: if the GHCR images are private, reference a docker-registry
+# Secret in this namespace. Leave empty when using public images (default).
+imagePullSecrets: []
+#  - name: ghcr-pull
+
 portal:
   # Git remote URL of the production skill registry. The API clones this
   # into an emptyDir at startup and refreshes every refreshInterval.
-  registryURL: "https://git.forge.internal/skills/registry.git"
+  registryURL: "https://github.com/askenaz-dev/forge-development-hub.git"
   registryBranch: "main"
   refreshInterval: "60s"
 
 oidc:
   # Full discovery URL — Keycloak realm endpoint.
-  discoveryURL: "https://keycloak.forge.internal/realms/fdh"
+  discoveryURL: "https://keycloak.askenaz.dev/realms/askenaz"
   clientID: "fdh-portal"
-  # Reference a Kubernetes Secret holding the client secret. The chart
-  # does NOT embed the secret value. Create the secret separately, e.g.:
-  #   kubectl create secret generic fdh-portal-oidc --from-literal=client_secret=...
+  # Reference a Kubernetes Secret holding the client secret + Auth.js
+  # secret. The chart does NOT embed the secret value. Create the secret
+  # separately, e.g.:
+  #   kubectl create secret generic fdh-portal-oidc \
+  #     --from-literal=client_secret=<from-keycloak> \
+  #     --from-literal=auth_secret=$(openssl rand -hex 32) \
+  #     --namespace fdh
   clientSecretRef:
     name: "fdh-portal-oidc"
     key: "client_secret"
@@ -75,11 +84,17 @@ observability:
 ingress:
   enabled: true
   className: "nginx"
-  host: "fdh.forge.internal"
+  host: "fdh.askenaz.dev"
   tls:
     enabled: true
-    secretName: "fdh-portal-tls"
+    # Secret holding the TLS cert + key. With Cloudflare Origin Certificate
+    # (recommended), create once and reuse across subdomains:
+    #   kubectl create secret tls cloudflare-origin-tls \
+    #     --cert=origin.pem --key=origin.key --namespace fdh
+    secretName: "cloudflare-origin-tls"
   annotations: {}
+    # If using cert-manager + ClusterIssuer instead of an Origin Cert:
+    # cert-manager.io/cluster-issuer: "letsencrypt-cloudflare"
 
 service:
   type: ClusterIP

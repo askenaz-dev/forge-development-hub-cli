@@ -14,11 +14,11 @@ import (
 // owns its registry rather than using the default global, so multiple
 // portal API instances in the same process (during tests) do not collide.
 type metricsRegistry struct {
-	reg              *prometheus.Registry
-	requestDuration  *prometheus.HistogramVec
-	requestsInFlight prometheus.Gauge
-	refreshTotal     *prometheus.CounterVec
-	refreshDuration  prometheus.Histogram
+	reg               *prometheus.Registry
+	requestDuration   *prometheus.HistogramVec
+	requestsInFlight  prometheus.Gauge
+	refreshTotal      *prometheus.CounterVec
+	refreshDuration   prometheus.Histogram
 	registryCacheSize prometheus.Gauge
 }
 

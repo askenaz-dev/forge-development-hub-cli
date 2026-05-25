@@ -1,4 +1,4 @@
-# What ships in the published @forge/fdh tarball is controlled by
+# What ships in the published @askenaz-dev/fdh tarball is controlled by
 # `package.json` "files" (allowlist). This .npmignore is a belt-and-suspenders
 # in case "files" is removed or misconfigured.
 

@@ -7,7 +7,7 @@ import (
 )
 
 // DefaultCacheDir resolves the per-user cache directory the hub clone
-// is materialised in:
+// is materialized in:
 //
 //   - Linux/macOS: $XDG_CACHE_HOME/fdh/hub or ~/.cache/fdh/hub
 //   - Windows: %LOCALAPPDATA%\fdh\hub

@@ -1,7 +1,7 @@
 name: npm wrapper tests
 
-# Tests the @forge/fdh npm wrapper on the cross-product of:
-#   3 package managers × 3 OS × 1 Node LTS (18)  =  9 jobs
+# Tests the @askenaz-dev/fdh npm wrapper on the cross-product of:
+#   3 package managers × 3 OS × 1 Node LTS (20)  =  9 jobs
 #
 # We run on:
 #   - Pull requests touching npm/, .github/workflows/npm-test.yml, or scripts/
@@ -11,8 +11,8 @@ name: npm wrapper tests
 # how npm/pnpm/yarn invoke postinstall scripts and resolve `bin` entries.
 #
 # What is NOT covered here:
-#   - End-to-end install from the real Artifactory registry (deferred, needs
-#     internal registry to exist + credentials in the runner).
+#   - End-to-end install from a real GitHub Release (deferred, needs an
+#     actual release to exist).
 #   - The Go binary itself (covered by the regular ci.yml).
 
 on:

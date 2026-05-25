@@ -28,13 +28,13 @@ layout: **unchanged**. The rename is cosmetic + organizational.
 
    ```sh
    # one-liner installer (macOS / Linux)
-   curl -fsSL https://${FDH_PKG_HOST}/fdh/install.sh | bash
+   curl -fsSL https://raw.githubusercontent.com/askenaz-dev/forge-development-hub-cli/main/scripts/install.sh | bash
 
    # PowerShell (Windows)
-   iwr https://${FDH_PKG_HOST}/fdh/install.ps1 | iex
+   iwr https://${FDH_RELEASES_BASE}/fdh/install.ps1 | iex
 
    # Homebrew (when the internal tap is published)
-   brew install forge-internal/tools/fdh
+   brew install askenaz-dev/tap/fdh
 
    # Linux package
    sudo apt install fdh    # or: sudo dnf install fdh

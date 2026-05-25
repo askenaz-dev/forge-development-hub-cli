@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
-import { getSkill, getSkillMarkdown, ApiError } from "@/lib/api";
+import { getSkill, getSkillMarkdown, ApiError, type SkillManifest } from "@/lib/api";
 import { CopyCommand } from "@/components/copy-command";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,13 +22,26 @@ export default async function SkillDetailPage({
 }) {
   const { namespace, name } = await params;
   const t = await getTranslations("skillDetail");
+  const tCommon = await getTranslations("common");
 
-  let manifest;
+  let manifest: SkillManifest | null = null;
   try {
     manifest = await getSkill(namespace, name, { revalidate: 30 });
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) notFound();
-    throw err;
+    // Non-404 failures (network down, 5xx) — render an inline
+    // fallback so the route degrades within the layout's <main>
+    // instead of crashing the error boundary. The /skills index uses
+    // the same graceful-fallback strategy.
+  }
+
+  if (!manifest) {
+    return (
+      <article className="container py-10">
+        <h1 className="text-3xl font-bold tracking-tight">{name}</h1>
+        <p className="mt-4 text-muted-foreground">{tCommon("error")}</p>
+      </article>
+    );
   }
 
   const latest = manifest.versions.find((v) => v.version === manifest.latest) ?? manifest.versions[0];

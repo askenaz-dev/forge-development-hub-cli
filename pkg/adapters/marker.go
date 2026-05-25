@@ -27,7 +27,7 @@ func MarkerName(agent, skillName string) string {
 	}
 }
 
-// MarshalMarker serialises a SkillVersionMarker to its on-disk YAML
+// MarshalMarker serializes a SkillVersionMarker to its on-disk YAML
 // form. The marker is intentionally tiny so devs can read it.
 func MarshalMarker(m SkillVersionMarker) ([]byte, error) {
 	if m.InstalledAt.IsZero() {

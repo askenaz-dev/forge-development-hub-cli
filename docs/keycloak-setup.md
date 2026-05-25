@@ -25,8 +25,8 @@ realm is preferred. The portal does need the realm to expose:
 | Implicit flow        | Disabled                                                    |
 | Direct access grants | Disabled                                                    |
 | Service accounts     | Disabled (unless future automation requires)                |
-| Valid redirect URIs  | `https://fdh.forge.internal/api/auth/callback/keycloak` |
-| Web origins          | `https://fdh.forge.internal`                            |
+| Valid redirect URIs  | `https://fdh.askenaz.dev/api/auth/callback/keycloak` |
+| Web origins          | `https://fdh.askenaz.dev`                            |
 | PKCE                 | Required (`S256`)                                           |
 
 ### 3. Group claim mapper

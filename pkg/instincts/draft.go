@@ -124,7 +124,7 @@ func (c *Cluster) RenderDraft(opts DraftOptions) string {
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "## How to apply")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "TODO: explain when an agent should load this skill and what behaviour it should produce.")
+	fmt.Fprintln(&b, "TODO: explain when an agent should load this skill and what behavior it should produce.")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "## Source bodies (verbatim)")
 	fmt.Fprintln(&b)

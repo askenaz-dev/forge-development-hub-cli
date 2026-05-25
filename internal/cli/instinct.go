@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,9 +20,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/forge/fdh/pkg/instincts"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/forge/fdh/pkg/instincts"
 )
 
 // newInstinctCmd wires the `fdh instinct` subcommand tree.
@@ -656,10 +658,10 @@ func runFdhScanOnBundle(items []*instincts.Instinct) ([]string, error) {
 // minimalSecretsScan is a stop-gap until fdh-scan-security ships. It looks for
 // the most catastrophic patterns: AWS access keys, GitHub tokens, JWTs.
 var (
-	awsKey    = regexp.MustCompile(`AKIA[0-9A-Z]{16}`)
-	ghToken   = regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{36,}`)
-	jwtToken  = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`)
-	urlCreds  = regexp.MustCompile(`https?://[^:/\s]+:[^@/\s]+@`)
+	awsKey   = regexp.MustCompile(`AKIA[0-9A-Z]{16}`)
+	ghToken  = regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{36,}`)
+	jwtToken = regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`)
+	urlCreds = regexp.MustCompile(`https?://[^:/\s]+:[^@/\s]+@`)
 )
 
 func minimalSecretsScan(body string) []string {
@@ -795,7 +797,7 @@ func readBundleTarGz(path string) ([]*instincts.Instinct, error) {
 	var out []*instincts.Instinct
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

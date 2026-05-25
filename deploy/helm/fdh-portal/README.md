@@ -2,14 +2,15 @@
 
 Deploys the FDH portal (API + Web) onto Kubernetes, fronted by a single
 Ingress at the configured host. Keycloak is consumed, not provisioned —
-the platform identity team operates the canonical Keycloak.
+this chart expects an existing Keycloak (default: `keycloak.askenaz.dev`).
 
 ## Quick start
 
 ```sh
-# 1. Create the OIDC secret (client_secret + a 32+ byte AUTH_SECRET for Auth.js).
+# 1. Create the OIDC secret (client_secret from Keycloak + a 32+ byte
+#    AUTH_SECRET for Auth.js).
 kubectl create secret generic fdh-portal-oidc \
-  --from-literal=client_secret=$(openssl rand -hex 32) \
+  --from-literal=client_secret=<from-keycloak> \
   --from-literal=auth_secret=$(openssl rand -hex 32) \
   --namespace fdh
 
@@ -18,26 +19,30 @@ kubectl create configmap fdh-portal-role-map \
   --from-file=role-map.yaml=./role-map.yaml \
   --namespace fdh
 
-# 3. Install the chart.
+# 3. Create the TLS secret. With a Cloudflare Origin Certificate
+#    (recommended), generate once in the Cloudflare dashboard then:
+kubectl create secret tls cloudflare-origin-tls \
+  --cert=origin.pem --key=origin.key --namespace fdh
+
+# 4. Install the chart with the defaults already targeted at askenaz.dev.
 helm upgrade --install fdh-portal ./deploy/helm/fdh-portal \
-  --namespace fdh --create-namespace \
-  --set ingress.host=fdh.forge.internal \
-  --set portal.registryURL=https://git.forge.internal/skills/registry.git
+  --namespace fdh --create-namespace
 ```
 
 ## Values
 
 See `values.yaml` for the full surface. Key knobs:
 
-| Path                          | Purpose                                                  |
-| ----------------------------- | -------------------------------------------------------- |
-| `api.image.tag`               | Override the API image tag (default: chart appVersion).  |
-| `web.image.tag`               | Override the web image tag.                              |
-| `portal.registryURL`          | Git URL of the production skill registry.                |
-| `oidc.discoveryURL`           | Keycloak realm discovery URL.                            |
-| `oidc.clientSecretRef`        | Reference to the K8s secret holding `client_secret` and `auth_secret`. |
-| `ingress.host`                | Public hostname.                                         |
-| `observability.otel.endpoint` | OTLP collector for trace export.                         |
+| Path                          | Default                                              | Purpose                                                  |
+| ----------------------------- | ---------------------------------------------------- | -------------------------------------------------------- |
+| `api.image.tag`               | `""` (chart appVersion)                              | Override the API image tag.                              |
+| `web.image.tag`               | `""` (chart appVersion)                              | Override the web image tag.                              |
+| `portal.registryURL`          | `https://github.com/askenaz-dev/forge-development-hub.git` | Git URL of the production skill registry.                |
+| `oidc.discoveryURL`           | `https://keycloak.askenaz.dev/realms/askenaz`        | Keycloak realm discovery URL.                            |
+| `oidc.clientSecretRef`        | `fdh-portal-oidc` / `client_secret`                  | Reference to the K8s secret holding the client secret.   |
+| `ingress.host`                | `fdh.askenaz.dev`                                    | Public hostname.                                         |
+| `ingress.tls.secretName`      | `cloudflare-origin-tls`                              | TLS secret (Origin Cert recommended).                    |
+| `observability.otel.endpoint` | `""`                                                 | OTLP collector for trace export.                         |
 
 ## Smoke test
 
@@ -57,7 +62,7 @@ and refreshed its catalog. Open the portal at `https://<host>`.
 
 ## What's NOT in this chart
 
-- Keycloak itself.
+- Keycloak itself (use the existing instance at `keycloak.askenaz.dev`).
 - Prometheus / OTel collector — assumed to be running in the cluster
   (the chart only enables the ServiceMonitor + emits OTLP).
 - A database — the MVP is stateless.

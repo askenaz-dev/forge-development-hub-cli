@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/forge/fdh/pkg/adapters"
 	"github.com/forge/fdh/pkg/hubregistry"
-	"github.com/spf13/cobra"
 )
 
 // UpdateResult is the JSON shape `fdh update --json` emits. Same
@@ -118,7 +119,7 @@ func runUpdate(cmd *cobra.Command, _ []string, info BuildInfo) error {
 		}
 		var ans string
 		if _, err := fmt.Fscanln(cmd.InOrStdin(), &ans); err != nil || !strings.EqualFold(strings.TrimSpace(ans), "y") {
-			fmt.Fprintln(cmd.OutOrStdout(), "Cancelled.")
+			fmt.Fprintln(cmd.OutOrStdout(), "Canceled.")
 			return nil
 		}
 	}

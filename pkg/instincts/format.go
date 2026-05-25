@@ -33,7 +33,7 @@ type Instinct struct {
 	// ID is a ULID (26 chars, Crockford Base32). Lexicographically sortable.
 	ID string `yaml:"id"`
 
-	// Title is a one-liner (≤120 chars) summarising the pattern.
+	// Title is a one-liner (≤120 chars) summarizing the pattern.
 	Title string `yaml:"title"`
 
 	// Confidence in 0.0–1.0. Manual input in v1. Suggested anchors:
@@ -66,7 +66,7 @@ type Instinct struct {
 	RelatedSkills []string `yaml:"related_skills,omitempty"`
 
 	// Body is the free-form markdown body (everything after the closing `---`).
-	// Not serialised as part of frontmatter — see Encode/Decode below.
+	// Not serialized as part of frontmatter — see Encode/Decode below.
 	Body string `yaml:"-"`
 }
 
@@ -142,7 +142,7 @@ func (i *Instinct) Encode() ([]byte, error) {
 	if err := i.Validate(); err != nil {
 		return nil, err
 	}
-	// Marshal a shallow copy so we don't accidentally serialise the Body field.
+	// Marshal a shallow copy so we don't accidentally serialize the Body field.
 	fm, err := yaml.Marshal(struct {
 		ID            string    `yaml:"id"`
 		Title         string    `yaml:"title"`

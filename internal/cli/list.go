@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/forge/fdh/pkg/adapters"
 	"github.com/forge/fdh/pkg/provenance"
-	"github.com/spf13/cobra"
 )
 
 // ListedSkill is the JSON shape per row emitted by `list --json`.
@@ -51,7 +52,7 @@ func runList(cmd *cobra.Command, args []string, info BuildInfo) error {
 	}
 
 	scopeStr, _ := cmd.Flags().GetString("scope")
-	scopes := []adapters.Scope{}
+	var scopes []adapters.Scope
 	switch strings.ToLower(scopeStr) {
 	case "user":
 		scopes = []adapters.Scope{adapters.ScopeUser}

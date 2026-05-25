@@ -7,13 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forge/fdh/internal/testutil"
-	"github.com/forge/fdh/pkg/registry"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/internal/testutil"
+	"github.com/forge/fdh/pkg/registry"
 )
 
 // TestGitRegistry_RefreshAdvancesWorkingTree exercises the refresh path end

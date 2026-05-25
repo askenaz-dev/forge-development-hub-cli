@@ -7,15 +7,16 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/forge/fdh/pkg/hubregistry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/pkg/hubregistry"
 )
 
 // buildRepoRoot stages a repo root with skills/registry.yaml + the
 // referenced skill directories. yaml is written verbatim;
 // skillsOnDisk is the list of `skills/<name>/` directories to
-// materialise.
+// materialize.
 func buildRepoRoot(t *testing.T, yaml string, skillsOnDisk []string) string {
 	t.Helper()
 	root := t.TempDir()

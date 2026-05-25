@@ -4,7 +4,7 @@ Common issues installing or running `fdh`, ordered by frequency.
 
 ## Install via npm fails with `EAI_AGAIN` / `ECONNRESET` / proxy errors
 
-The npm wrapper's postinstall downloads the Go binary from `${FDH_PKG_HOST}`. Behind a corporate firewall, you need a proxy. The wrapper honors (in priority order):
+The npm wrapper's postinstall downloads the Go binary from `${FDH_RELEASES_BASE}`. Behind a corporate firewall, you need a proxy. The wrapper honors (in priority order):
 
 1. `npm_config_https_proxy` / `npm_config_proxy` — set by `.npmrc`
 2. `HTTPS_PROXY` / `HTTP_PROXY` — env vars
@@ -14,23 +14,23 @@ The npm wrapper's postinstall downloads the Go binary from `${FDH_PKG_HOST}`. Be
 
 ```ini
 # ~/.npmrc (or .npmrc at project root)
-https-proxy=http://corp-proxy.forge.internal:8080
-proxy=http://corp-proxy.forge.internal:8080
-noproxy=.forge.internal,localhost
+https-proxy=http://corp-proxy.askenaz.dev:8080
+proxy=http://corp-proxy.askenaz.dev:8080
+noproxy=.askenaz.dev,localhost
 ```
 
 ### Configure via env vars (transient)
 
 ```sh
-export HTTPS_PROXY=http://corp-proxy.forge.internal:8080
-export NO_PROXY=.forge.internal,localhost
-npx @forge/fdh init
+export HTTPS_PROXY=http://corp-proxy.askenaz.dev:8080
+export NO_PROXY=.askenaz.dev,localhost
+npx @askenaz-dev/fdh init
 ```
 
 ```powershell
-$env:HTTPS_PROXY = "http://corp-proxy.forge.internal:8080"
-$env:NO_PROXY = ".forge.internal,localhost"
-npx @forge/fdh init
+$env:HTTPS_PROXY = "http://corp-proxy.askenaz.dev:8080"
+$env:NO_PROXY = ".askenaz.dev,localhost"
+npx @askenaz-dev/fdh init
 ```
 
 ## Install fails with `unable to verify the first certificate` / SSL errors
@@ -40,12 +40,12 @@ Your corporate proxy is doing TLS inspection — it re-signs HTTPS connections w
 ```sh
 # Set NODE_EXTRA_CA_CERTS to your corporate CA bundle (often `.pem` or `.crt`).
 export NODE_EXTRA_CA_CERTS=/path/to/forge-corporate-ca.pem
-npx @forge/fdh init
+npx @askenaz-dev/fdh init
 ```
 
 ```powershell
 $env:NODE_EXTRA_CA_CERTS = "C:\path\to\forge-corporate-ca.pem"
-npx @forge/fdh init
+npx @askenaz-dev/fdh init
 ```
 
 Permanent fix: add `NODE_EXTRA_CA_CERTS` to your shell profile. Some IT departments also configure `NPM_CONFIG_CAFILE`:
@@ -55,27 +55,27 @@ Permanent fix: add `NODE_EXTRA_CA_CERTS` to your shell profile. Some IT departme
 cafile=/path/to/forge-corporate-ca.pem
 ```
 
-## `fdh: binary not found at <path>; run 'npm rebuild @forge/fdh' to repair`
+## `fdh: binary not found at <path>; run 'npm rebuild @askenaz-dev/fdh' to repair`
 
 The postinstall script either skipped or failed. Repair:
 
 ```sh
-npm rebuild @forge/fdh   # for npm-installed
-pnpm rebuild @forge/fdh  # for pnpm
-yarn rebuild @forge/fdh  # for yarn (where supported)
+npm rebuild @askenaz-dev/fdh   # for npm-installed
+pnpm rebuild @askenaz-dev/fdh  # for pnpm
+yarn rebuild @askenaz-dev/fdh  # for yarn (where supported)
 ```
 
 If `rebuild` fails too, check that:
 
 - `tar` is available on `PATH` (required to extract the binary tarball; built into Windows 10 1809+).
-- `FDH_PKG_HOST` is set or reachable (`echo $FDH_PKG_HOST` or `echo $env:FDH_PKG_HOST`).
+- `FDH_RELEASES_BASE` is set or reachable (`echo $FDH_RELEASES_BASE` or `echo $env:FDH_RELEASES_BASE`).
 - Your proxy / cert config (above) is correct.
 
 As a last resort, fall back to `install.sh` (POSIX) or `install.ps1` (Windows) — see [quickstart.md](./quickstart.md#fallback--posix--powershell-one-liner).
 
 ## `fdh: no prebuilt binary for <platform>-<arch>`
 
-The matrix we ship covers: `darwin-arm64`, `darwin-amd64`, `linux-arm64`, `linux-amd64`, `windows-amd64`. If you need an additional target (e.g., `windows-arm64`, `linux-mips`, FreeBSD), contact `dx-platform` or build from source:
+The matrix we ship covers: `darwin-arm64`, `darwin-amd64`, `linux-arm64`, `linux-amd64`, `windows-amd64`. If you need an additional target (e.g., `windows-arm64`, `linux-mips`, FreeBSD), contact `maintainers` or build from source:
 
 ```sh
 git clone https://github.com/forge/fdh
@@ -88,11 +88,11 @@ go build -o ~/bin/fdh ./cmd/fdh
 
 ### pnpm
 
-`pnpm` installs to a content-addressable store and symlinks into `node_modules/.pnpm/`. The wrapper handles this correctly — the binary path is resolved relative to `import.meta.url` so symlinking doesn't break it. If `pnpm rebuild @forge/fdh` doesn't work, try `pnpm install --shamefully-hoist`.
+`pnpm` installs to a content-addressable store and symlinks into `node_modules/.pnpm/`. The wrapper handles this correctly — the binary path is resolved relative to `import.meta.url` so symlinking doesn't break it. If `pnpm rebuild @askenaz-dev/fdh` doesn't work, try `pnpm install --shamefully-hoist`.
 
 ### Yarn classic (1.x)
 
-Yarn classic's `--ignore-scripts` is global, not per-package. If you set it globally to avoid scripts from other packages, our postinstall is skipped too — set `FDH_SKIP_POSTINSTALL=0` (default) and run `yarn add @forge/fdh` without `--ignore-scripts` once.
+Yarn classic's `--ignore-scripts` is global, not per-package. If you set it globally to avoid scripts from other packages, our postinstall is skipped too — set `FDH_SKIP_POSTINSTALL=0` (default) and run `yarn add @askenaz-dev/fdh` without `--ignore-scripts` once.
 
 ### Yarn berry (2+) / PnP
 
@@ -105,7 +105,7 @@ nodeLinker: node-modules
 
 ### Bun
 
-Bun is detected but not officially supported. If `bun add @forge/fdh` fails on the postinstall, fall back to `npm i -g @forge/fdh` for now and file an issue.
+Bun is detected but not officially supported. If `bun add @askenaz-dev/fdh` fails on the postinstall, fall back to `npm i -g @askenaz-dev/fdh` for now and file an issue.
 
 ## Cache miss / `cache miss (sha256 differs)`
 

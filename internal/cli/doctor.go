@@ -7,32 +7,33 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forge/fdh/pkg/adapters"
 	"github.com/spf13/cobra"
+
+	"github.com/forge/fdh/pkg/adapters"
 )
 
 // DoctorReport is the JSON shape emitted by `doctor --json`.
 type DoctorReport struct {
-	InstallerVersion string                `json:"installer_version"`
-	HomeDir          string                `json:"home_dir"`
-	ProjectRoot      string                `json:"project_root,omitempty"`
-	Registry         RegistryHealth        `json:"registry"`
-	Agents           []AgentHealth         `json:"agents"`
-	Issues           []DoctorIssue         `json:"issues"`
+	InstallerVersion string         `json:"installer_version"`
+	HomeDir          string         `json:"home_dir"`
+	ProjectRoot      string         `json:"project_root,omitempty"`
+	Registry         RegistryHealth `json:"registry"`
+	Agents           []AgentHealth  `json:"agents"`
+	Issues           []DoctorIssue  `json:"issues"`
 }
 
 // AgentHealth describes one agent's detection + path state.
 type AgentHealth struct {
-	ID         string             `json:"id"`
-	Detected   bool               `json:"detected"`
-	UserPaths  []PathWritability  `json:"user_paths"`
-	Project    []PathWritability  `json:"project_paths,omitempty"`
+	ID        string            `json:"id"`
+	Detected  bool              `json:"detected"`
+	UserPaths []PathWritability `json:"user_paths"`
+	Project   []PathWritability `json:"project_paths,omitempty"`
 }
 
 // PathWritability is a single declared path with its writability classification.
 type PathWritability struct {
-	Path  string `json:"path"`
-	State string `json:"state"` // writable | writable-creatable | unwritable
+	Path   string `json:"path"`
+	State  string `json:"state"` // writable | writable-creatable | unwritable
 	Detail string `json:"detail,omitempty"`
 }
 

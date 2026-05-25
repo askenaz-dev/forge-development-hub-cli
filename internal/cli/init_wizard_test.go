@@ -9,10 +9,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/forge/fdh/pkg/adapters"
-	"github.com/forge/fdh/pkg/hubregistry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/pkg/adapters"
+	"github.com/forge/fdh/pkg/hubregistry"
 )
 
 const wizardFixtureRegistry = `schema_version: 1
@@ -142,7 +143,7 @@ func TestRunInitWizard_UserCancels(t *testing.T) {
 	assert.Equal(t, []string{"claude-code"}, agents)
 	assert.Equal(t, []string{"design-system"}, skills)
 	assert.Empty(t, installed)
-	assert.Contains(t, stdout.String(), "Cancelled")
+	assert.Contains(t, stdout.String(), "Canceled")
 }
 
 func TestRunInitWizard_NonInteractiveFromFlags(t *testing.T) {

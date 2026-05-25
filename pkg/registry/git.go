@@ -4,8 +4,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -14,10 +12,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/forge/fdh/pkg/bundle"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+
+	"github.com/forge/fdh/pkg/bundle"
 )
 
 // GitRegistry is a Registry implementation backed by a local Git clone
@@ -164,7 +163,7 @@ func (g *GitRegistry) checkoutRemoteHead(ctx context.Context, repo *gogit.Reposi
 	wt, err := repo.Worktree()
 	if err != nil {
 		// No worktree (bare clone) is fine; reads still work from objects.
-		return nil
+		return nil //nolint:nilerr // bare clone is a supported configuration
 	}
 	checkoutErr := wt.Checkout(&gogit.CheckoutOptions{
 		Hash:  remoteRef.Hash(),
@@ -285,16 +284,7 @@ func (g *GitRegistry) Search(ctx context.Context, query string) ([]SkillSummary,
 		if !matchQuery(blob, query) {
 			continue
 		}
-		out = append(out, SkillSummary{
-			Namespace:     e.Namespace,
-			Name:          e.Name,
-			Description:   e.Description,
-			OwnerTeam:     e.OwnerTeam,
-			Tags:          e.Tags,
-			LatestVersion: e.LatestVersion,
-			LatestHash:    e.LatestHash,
-			ScanStatus:    e.ScanStatus,
-		})
+		out = append(out, SkillSummary(e))
 	}
 	return out, nil
 }
@@ -392,12 +382,12 @@ func extractTarGz(tgz, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		return err
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
@@ -426,10 +416,10 @@ func extractTarGz(tgz, dest string) error {
 				return err
 			}
 			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
+				_ = out.Close()
 				return err
 			}
-			out.Close()
+			_ = out.Close()
 			// Preserve executable bit on POSIX.
 			if hdr.Mode&0o111 != 0 {
 				_ = os.Chmod(target, 0o755)
@@ -440,11 +430,6 @@ func extractTarGz(tgz, dest string) error {
 		}
 	}
 	return nil
-}
-
-func sha256Bytes(b []byte) string {
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
 }
 
 // systemGitAvailable reports whether the system `git` binary is on PATH.

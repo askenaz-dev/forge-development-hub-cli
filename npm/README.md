@@ -1,25 +1,26 @@
-# @forge/fdh
+# @askenaz-dev/fdh
 
-npm wrapper for the [forge Development Hub](https://github.com/forge/fdh) CLI. The published package contains a thin TypeScript/JavaScript layer that downloads the right Go binary for the developer's platform at install time and dispatches to it at runtime.
+npm wrapper for the [Forge Development Hub](https://github.com/askenaz-dev/forge-development-hub-cli) CLI. The published package contains a thin TypeScript/JavaScript layer that downloads the right Go binary for the developer's platform at install time and dispatches to it at runtime.
 
 ```bash
-npx @forge/fdh init           # zero-install
-npm i -g @forge/fdh           # persistent
+npx @askenaz-dev/fdh init           # zero-install
+npm i -g @askenaz-dev/fdh           # persistent
 ```
 
 ## How it works
 
 ```
        ┌────────────────────────────────────────────┐
-       │  npm i (or npx) @forge/fdh             │
+       │  npm i (or npx) @askenaz-dev/fdh           │
        └─────────────────┬──────────────────────────┘
                          │
                          ▼
        ┌────────────────────────────────────────────┐
        │  postinstall.js (sync)                      │
        │  ─────────────────                          │
-       │  1. detect process.platform + arch         │
-       │  2. resolve $FDH_PKG_HOST/fdh/<ver>/...     │
+       │  1. detect process.platform + arch          │
+       │  2. resolve GitHub Releases asset URL       │
+       │     (or FDH_RELEASES_BASE override)         │
        │  3. download tarball + SHA-256 (via proxy   │
        │     if configured)                          │
        │  4. verify SHA-256                          │
@@ -39,7 +40,7 @@ npm i -g @forge/fdh           # persistent
 
 ```
 npm/
-├── package.json           # name=@forge/fdh, bin maps fdh + forge-installer
+├── package.json           # name=@askenaz-dev/fdh, bin maps fdh + forge-installer
 ├── tsconfig.json          # strict TS 5+, ES2022, Node16 modules
 ├── vitest.config.ts       # tests in tests/*.test.ts
 ├── .npmignore             # only dist/ ships
@@ -70,7 +71,18 @@ System binaries required at install/runtime:
 
 ## Versioning
 
-The npm package version always equals the underlying Go binary version. A single `git tag vX.Y.Z` on the Go repo triggers an atomic release: Go cross-compile → upload binaries + SHA-256 + manifest → `npm version` → `npm publish`. No independent cycles.
+The npm package version always equals the underlying Go binary version. A single `git tag vX.Y.Z` on the repo triggers an atomic release: Go cross-compile → upload binaries + SHA-256 to GitHub Releases → `npm version` → `npm publish`. No independent cycles.
+
+## Configuration
+
+The postinstall script and CLI wrapper honor these env vars:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `FDH_RELEASES_BASE` | `https://github.com/askenaz-dev/forge-development-hub-cli/releases` | Base URL for binary downloads. Override to point at a private mirror following the same release-asset layout. |
+| `FDH_SKIP_POSTINSTALL` | (unset) | Set to `1` or `true` to skip the postinstall binary download (useful in CI when you only need the wrapper). |
+| `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY` | (env) | Standard proxy env vars. Also reads `npm_config_https_proxy` / `npm_config_proxy` from `.npmrc`. |
+| `NODE_EXTRA_CA_CERTS` | (env) | Standard Node CA bundle override for corporate cert-inspection proxies. |
 
 ## Local development
 
@@ -87,9 +99,21 @@ npm run build
 npm test
 
 # Smoke test the wrapper without publishing
-FDH_PKG_HOST=pkg.forge.internal node dist/postinstall.js
+node dist/postinstall.js
 ./dist/cli.js --version
 ```
+
+## Publishing to an alternate registry
+
+Default publish target is `https://registry.npmjs.org/` (public, set via `publishConfig.registry`). To publish to a private registry instead, override at publish time:
+
+```bash
+npm publish --registry https://npm.pkg.github.com/
+# or
+NPM_CONFIG_REGISTRY=https://npm.askenaz.dev/ npm publish
+```
+
+See `.npmrc.template` for the per-scope configuration pattern.
 
 ## See also
 

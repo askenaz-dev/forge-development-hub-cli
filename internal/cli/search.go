@@ -7,8 +7,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/forge/fdh/pkg/registry"
 	"github.com/spf13/cobra"
+
+	"github.com/forge/fdh/pkg/registry"
 )
 
 // SearchHit mirrors registry.SkillSummary with explicit JSON tags.

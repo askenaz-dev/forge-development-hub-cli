@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/forge/fdh/internal/cli"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/internal/cli"
 )
 
 // Golden-file tests pin the JSON shape of each command's --json output.

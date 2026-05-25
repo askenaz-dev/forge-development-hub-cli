@@ -175,4 +175,3 @@ func findOrphans(hubRoot string, skills []SkillEntry) ([]string, error) {
 	}
 	return orphans, nil
 }
-

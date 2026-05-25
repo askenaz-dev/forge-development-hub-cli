@@ -6,10 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/forge/fdh/internal/testutil"
-	"github.com/forge/fdh/pkg/registry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/internal/testutil"
+	"github.com/forge/fdh/pkg/registry"
 )
 
 func buildFixtureRegistry(t *testing.T) string {

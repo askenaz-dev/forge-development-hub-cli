@@ -36,7 +36,7 @@ type Registry struct {
 	Skills []SkillEntry `yaml:"skills"`
 
 	// LocalPath is the absolute on-disk path of the hub clone the
-	// Registry was loaded from. Populated by Load. Not serialised.
+	// Registry was loaded from. Populated by Load. Not serialized.
 	LocalPath string `yaml:"-"`
 
 	// HubCommit is the SHA of HEAD at load time. Populated by Load.
@@ -79,7 +79,7 @@ type SkillEntry struct {
 
 // LoadOptions controls how Load fetches and caches the hub.
 type LoadOptions struct {
-	// CacheDir is the directory the hub clone is materialised in.
+	// CacheDir is the directory the hub clone is materialized in.
 	// Empty means "use the default per-user cache" (see DefaultCacheDir).
 	CacheDir string
 

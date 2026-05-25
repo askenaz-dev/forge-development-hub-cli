@@ -9,9 +9,9 @@ Goreleaser produces, for each (os, arch) in the matrix:
 - `fdh_<version>_<os>_<arch>.tar.gz` (or `.zip` on Windows) + `.sha256`
 - `forge-installer_<version>_<os>_<arch>.tar.gz` (back-compat stub) + `.sha256`
 - `.deb` and `.rpm` packages for `linux/amd64` and `linux/arm64`
-- A Homebrew formula in `forge-internal/homebrew-tools` (when the
+- A Homebrew formula in `askenaz-dev/homebrew-tap` (when the
   internal tap is wired — placeholder until task 1.4)
-- A winget manifest in `forge-internal/winget-pkgs` (same caveat)
+- A winget manifest in `askenaz-dev/winget-pkgs` (same caveat)
 
 The artifact-naming convention is part of the contract: `scripts/install.sh`
 and `scripts/install.ps1` resolve URLs against `fdh_<version>_<os>_<arch>.<ext>`.

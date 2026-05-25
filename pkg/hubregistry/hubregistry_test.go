@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/forge/fdh/pkg/hubregistry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/pkg/hubregistry"
 )
 
 // golden fixture used across the tests: a minimal valid registry.yaml
@@ -111,11 +112,11 @@ func TestLoad_FreshClonePopulatesRegistryOnly(t *testing.T) {
 	_ = reg
 
 	// The sparse-checkout pattern is `skills/registry.yaml` only, so
-	// the per-skill directories should NOT be materialised yet.
+	// the per-skill directories should NOT be materialized yet.
 	_, err = os.Stat(filepath.Join(cache, "skills", "registry.yaml"))
 	require.NoError(t, err)
 	_, err = os.Stat(filepath.Join(cache, "skills", "design-system", "SKILL.md"))
-	assert.Error(t, err, "skill dir should not be materialised before FetchSkill")
+	assert.Error(t, err, "skill dir should not be materialized before FetchSkill")
 }
 
 func TestFetchSkill_ExtendsSparseCheckout(t *testing.T) {
@@ -237,7 +238,7 @@ func TestValidate_Orphan(t *testing.T) {
 	cache := t.TempDir()
 	reg, err := hubregistry.Load(context.Background(), hub, hubregistry.LoadOptions{CacheDir: cache})
 	require.NoError(t, err)
-	// Materialise both skill dirs first so the orphan detector has
+	// Materialize both skill dirs first so the orphan detector has
 	// directories to walk.
 	_, err = reg.FetchSkill(context.Background(), "design-system")
 	require.NoError(t, err)

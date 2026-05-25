@@ -51,14 +51,14 @@ type BundlePath struct {
 	cleanup func() error
 }
 
-// Cleanup removes the extracted bundle directory. Safe to call multiple times.
+// Cleanup removes the extracted bundle directory. Safe to call multiple
+// times as long as the underlying cleanup func is idempotent (the in-tree
+// implementations use os.RemoveAll which already satisfies that).
 func (b BundlePath) Cleanup() error {
 	if b.cleanup == nil {
 		return nil
 	}
-	err := b.cleanup()
-	b.cleanup = nil
-	return err
+	return b.cleanup()
 }
 
 // ConsistencyIssue is a single problem found by CheckConsistency.

@@ -51,7 +51,7 @@ as the single Keycloak URL everywhere:
   — identical from both contexts, so validation passes.
 
 In production the issue doesn't apply: a real Keycloak (e.g.
-`keycloak.forge.internal`) is reachable from both browsers and
+`keycloak.askenaz.dev`) is reachable from both browsers and
 in-cluster pods at the same DNS name.
 
 ## 3. next-intl routing requires `app/[locale]/` segment

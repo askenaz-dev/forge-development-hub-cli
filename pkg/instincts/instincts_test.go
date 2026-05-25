@@ -28,7 +28,7 @@ func TestNewULID_Format(t *testing.T) {
 func TestNewULID_Ordering(t *testing.T) {
 	a, _ := NewULID(time.Unix(1_700_000_000, 0))
 	b, _ := NewULID(time.Unix(1_800_000_000, 0))
-	if !(a < b) {
+	if a >= b {
 		t.Fatalf("expected a < b (chronological→lexicographical); got a=%q b=%q", a, b)
 	}
 }

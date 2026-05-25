@@ -12,15 +12,17 @@
 
 .PARAMETER Version
     Specific version to install (e.g. v0.5.2). Defaults to 'latest' which
-    is resolved from manifest.json published by the release pipeline.
+    is resolved from the GitHub Releases API.
 
 .NOTES
     Env vars honoured:
-      FDH_PKG_HOST   - override the download host
-                       (default: pkg.forge.internal — placeholder
-                       until the platform team confirms the real host).
-      FDH_INSTALL_DIR - override the install directory
-                       (default: $env:USERPROFILE\.fdh\bin).
+      FDH_RELEASES_BASE - Base URL where the release assets live. Defaults
+                          to the upstream GitHub Releases. Override to point
+                          at a private mirror with the same per-tag layout.
+      FDH_LATEST_URL    - URL returning JSON with a `tag_name` field for
+                          "latest". Defaults to GitHub's API.
+      FDH_INSTALL_DIR   - Override the install directory.
+                          (default: $env:USERPROFILE\.fdh\bin).
 
     Exit codes (stable):
       0  success
@@ -31,7 +33,7 @@
       5  checksum mismatch
 
     ExecutionPolicy: this script is intended to be invoked via
-        iwr https://<host>/fdh/install.ps1 | iex
+        iwr https://raw.githubusercontent.com/askenaz-dev/forge-development-hub-cli/main/scripts/install.ps1 | iex
     from a PowerShell session whose policy already permits running remote
     scripts. If yours doesn't, run the equivalent download + execute
     yourself with -ExecutionPolicy Bypass.
@@ -47,16 +49,14 @@ $ProgressPreference   = "SilentlyContinue"
 
 # --- defaults ------------------------------------------------------------
 
-$DefaultHost = "pkg.forge.internal"
-$PkgHost     = if ($env:FDH_PKG_HOST) { $env:FDH_PKG_HOST } else { $DefaultHost }
-$InstallDir  = if ($env:FDH_INSTALL_DIR) { $env:FDH_INSTALL_DIR } else { Join-Path $env:USERPROFILE ".fdh\bin" }
+$DefaultReleasesBase = "https://github.com/askenaz-dev/forge-development-hub-cli/releases"
+$DefaultLatestUrl    = "https://api.github.com/repos/askenaz-dev/forge-development-hub-cli/releases/latest"
 
-if ($PkgHost -eq $DefaultHost) {
-    Write-Warning "FDH_PKG_HOST not set; using placeholder default '$DefaultHost'."
-    Write-Warning "Set `$env:FDH_PKG_HOST to the real forge host before deploying."
-}
+$ReleasesBase = if ($env:FDH_RELEASES_BASE) { $env:FDH_RELEASES_BASE } else { $DefaultReleasesBase }
+$LatestUrl    = if ($env:FDH_LATEST_URL)    { $env:FDH_LATEST_URL }    else { $DefaultLatestUrl }
+$InstallDir   = if ($env:FDH_INSTALL_DIR)   { $env:FDH_INSTALL_DIR }   else { Join-Path $env:USERPROFILE ".fdh\bin" }
 
-# --- arch detection (task 8.1) -------------------------------------------
+# --- arch detection ------------------------------------------------------
 
 $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     "AMD64" { "amd64" }
@@ -71,9 +71,7 @@ $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
 }
 $target = "windows-$arch"
 
-# --- resolve version (task 8.3) ------------------------------------------
-
-$manifestUrl = "https://$PkgHost/fdh/manifest.json"
+# --- resolve version -----------------------------------------------------
 
 function Resolve-Version {
     param([string]$Requested)
@@ -82,36 +80,36 @@ function Resolve-Version {
         return $Requested
     }
     try {
-        $manifest = Invoke-RestMethod -Uri $manifestUrl -UseBasicParsing -TimeoutSec 30
+        $release = Invoke-RestMethod -Uri $LatestUrl -UseBasicParsing -TimeoutSec 30 `
+            -Headers @{ "Accept" = "application/vnd.github+json" }
     } catch {
-        Write-Error "could not fetch manifest at $manifestUrl ($($_.Exception.Message))"
+        Write-Error "could not fetch latest release info at $LatestUrl ($($_.Exception.Message))"
         exit 4
     }
-    if (-not $manifest.latest) {
-        Write-Error "manifest at $manifestUrl does not declare a 'latest' field"
+    if (-not $release.tag_name) {
+        Write-Error "latest release info at $LatestUrl does not declare a 'tag_name' field"
         exit 4
     }
-    return $manifest.latest
+    return $release.tag_name
 }
 
 $Version = Resolve-Version -Requested $Version
 
 # --- artifact URL convention --------------------------------------------
 
-# Mirror of install.sh's URL convention; matches the artifact names
-# emitted by .goreleaser.yaml + the manifest publisher.
-$artifact   = "fdh_${Version}_windows_${arch}.zip"
-$urlBase    = "https://$PkgHost/fdh/$Version"
+# Matches the artifact names emitted by .goreleaser.yaml.
+$artifact    = "fdh_${Version}_windows_${arch}.zip"
+$urlBase     = "$ReleasesBase/download/$Version"
 $artifactUrl = "$urlBase/$artifact"
 $shaUrl      = "$artifactUrl.sha256"
 
 Write-Host "fdh installer"
-Write-Host "  target:   $target"
-Write-Host "  version:  $Version"
-Write-Host "  host:     $PkgHost"
-Write-Host "  install:  $InstallDir"
+Write-Host "  target:    $target"
+Write-Host "  version:   $Version"
+Write-Host "  releases:  $ReleasesBase"
+Write-Host "  install:   $InstallDir"
 
-# --- idempotency check (task 8.7) ---------------------------------------
+# --- idempotency check ---------------------------------------------------
 
 $binPath        = Join-Path $InstallDir "fdh.exe"
 $markerPath     = Join-Path $InstallDir ".last-tarball-sha256"
@@ -131,7 +129,7 @@ if ((Test-Path $binPath) -and (Test-Path $markerPath) -and $expectedSha) {
     }
 }
 
-# --- download + verify + extract (tasks 8.4, 8.5) -----------------------
+# --- download + verify + extract ----------------------------------------
 
 $tmpDir = New-Item -ItemType Directory -Path (Join-Path $env:TEMP "fdh-install-$([Guid]::NewGuid().ToString('N'))")
 try {
@@ -164,8 +162,6 @@ try {
         New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     }
 
-    # Expand into a temp staging dir so we can locate fdh.exe wherever it
-    # lives inside the archive (versioned subdir or flat).
     $stage = New-Item -ItemType Directory -Path (Join-Path $tmpDir.FullName "stage")
     Expand-Archive -Path $zipPath -DestinationPath $stage.FullName -Force
 
@@ -182,12 +178,8 @@ try {
     Remove-Item -Recurse -Force $tmpDir.FullName -ErrorAction SilentlyContinue
 }
 
-# --- PATH editing (task 8.6) --------------------------------------------
+# --- PATH editing --------------------------------------------------------
 
-# We edit HKCU:\Environment (user-level PATH) so the change persists
-# across PowerShell sessions without admin rights. The current session
-# does not pick it up automatically — that's why we print the
-# "reopen PowerShell" note at the end.
 $envPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if (-not $envPath) { $envPath = "" }
 

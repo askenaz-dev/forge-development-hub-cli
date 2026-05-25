@@ -5,10 +5,11 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/forge/fdh/pkg/bundle"
-	"github.com/forge/fdh/pkg/portability"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/pkg/bundle"
+	"github.com/forge/fdh/pkg/portability"
 )
 
 // Sanity that the static on-disk fixtures parse and lint per expectation.

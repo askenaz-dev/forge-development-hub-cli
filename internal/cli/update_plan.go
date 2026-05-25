@@ -16,8 +16,8 @@ import (
 // produces. Each action ends up in one of three buckets at apply
 // time: applied, skipped, or failed.
 type UpdatePlanAction struct {
-	Skill  string `json:"skill"`
-	Agent  string `json:"agent"`
+	Skill string `json:"skill"`
+	Agent string `json:"agent"`
 
 	// HubCommit at install time, recorded in the marker.
 	InstalledHubCommit string `json:"installed_hub_commit"`
@@ -243,11 +243,11 @@ func mapBy[T any](xs []T, key func(T) string) map[string]T {
 
 // keep one stable label for the result strings the planner emits.
 const (
-	planRefresh    = "refresh"
-	planUpToDate   = "up-to-date"
-	planDrift      = "drift"
-	planVanished   = "vanished"
-	_              = planRefresh + planUpToDate + planDrift + planVanished // silence unused
+	planRefresh  = "refresh"
+	planUpToDate = "up-to-date"
+	planDrift    = "drift"
+	planVanished = "vanished"
+	_            = planRefresh + planUpToDate + planDrift + planVanished // silence unused
 )
 
 // flagSetToMap converts a CSV/string slice from cobra into a set

@@ -33,14 +33,14 @@ const (
 	ScopeProject Scope = "project"
 )
 
-// AgentEntry describes one agent. Marshalled from / to YAML directly.
+// AgentEntry describes one agent. Marshaled from / to YAML directly.
 type AgentEntry struct {
-	ID           string        `yaml:"id"`
-	DisplayName  string        `yaml:"display_name"`
-	SourceDocURL string        `yaml:"source_doc_url"`
-	VerifiedOn   string        `yaml:"verified_on,omitempty"`
-	Detect       []Probe       `yaml:"detect"`
-	Paths        ScopedPaths   `yaml:"paths"`
+	ID           string      `yaml:"id"`
+	DisplayName  string      `yaml:"display_name"`
+	SourceDocURL string      `yaml:"source_doc_url"`
+	VerifiedOn   string      `yaml:"verified_on,omitempty"`
+	Detect       []Probe     `yaml:"detect"`
+	Paths        ScopedPaths `yaml:"paths"`
 }
 
 // ScopedPaths holds the user-scope and project-scope read paths the agent
@@ -52,7 +52,7 @@ type ScopedPaths struct {
 	Project []string `yaml:"project"`
 }
 
-// Probe describes one detection check. The "type" field switches behaviour;
+// Probe describes one detection check. The "type" field switches behavior;
 // see probe_types.go for the type registry.
 type Probe struct {
 	Type string `yaml:"type"`

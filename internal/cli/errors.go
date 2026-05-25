@@ -28,8 +28,8 @@ type cliError struct {
 	err  error
 }
 
-func (e *cliError) Error() string  { return e.err.Error() }
-func (e *cliError) Unwrap() error  { return e.err }
+func (e *cliError) Error() string { return e.err.Error() }
+func (e *cliError) Unwrap() error { return e.err }
 
 // Errorf builds a cliError with the given exit code and message.
 func Errorf(code int, format string, args ...any) error {
