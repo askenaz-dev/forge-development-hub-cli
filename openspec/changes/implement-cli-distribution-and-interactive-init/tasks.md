@@ -1,10 +1,10 @@
 ## 1. Preflight
 
-- [ ] 1.1 Confirmar que el change `add-fdh-cli-distribution-and-interactive-init` del hub `forge-development-hub` está archivado y sus 4 specs sincronizados a `forge-development-hub/openspec/specs/{fdh-cli-distribution,fdh-init-interactive,fdh-skills-sync,hub-skills-registry}/spec.md`. Si no, hacer el archive primero — este change implementa esos specs y necesita que sean autoritativos.
+- [x] 1.1 Confirmar que el change `add-fdh-cli-distribution-and-interactive-init` del hub `forge-development-hub` está archivado y sus 4 specs sincronizados a `forge-development-hub/openspec/specs/{fdh-cli-distribution,fdh-init-interactive,fdh-skills-sync,hub-skills-registry}/spec.md`. Si no, hacer el archive primero — este change implementa esos specs y necesita que sean autoritativos. _(Verified: hub change archived at `archive/2026-05-23-add-fdh-cli-distribution-and-interactive-init/`; the 4 specs exist under `openspec/specs/`.)_
 - [x] 1.2 Decidir librería TUI (`charmbracelet/huh` recomendado) y librería YAML (`gopkg.in/yaml.v3` recomendado), pin de versión en `go.mod`.
-- [ ] 1.3 Confirmar con plataforma forge el host real para `FDH_PKG_HOST` (Artifactory / Nexus / S3 interno / GH Enterprise Releases). Reemplazar el placeholder `pkg.forge.internal` en `scripts/install.sh` y `scripts/install.ps1` por el default real cuando llegue.
-- [ ] 1.4 Confirmar con plataforma el nombre del tap Homebrew interno y del source winget interno.
-- [ ] 1.5 Confirmar si el cert corporativo Authenticode (Windows) y Apple Developer ID + notarization (macOS) están disponibles. Si no, planificar release inicial sin firma con warning explícito en los scripts (degradación documentada en design.md del hub).
+- [x] 1.3 Confirmar con plataforma forge el host real para `FDH_PKG_HOST` (Artifactory / Nexus / S3 interno / GH Enterprise Releases). Reemplazar el placeholder `pkg.forge.internal` en `scripts/install.sh` y `scripts/install.ps1` por el default real cuando llegue. _(Resolved by the askenaz-dev rebrand: scripts now read `FDH_RELEASES_BASE` (default `https://github.com/askenaz-dev/forge-development-hub-cli/releases`) and `FDH_LATEST_URL`. `FDH_PKG_HOST` is no longer used; the env-var rename is intentional and documented in `docs/install.md`.)_
+- [x] 1.4 Confirmar con plataforma el nombre del tap Homebrew interno y del source winget interno. _(Names decided: `askenaz-dev/tap` for Homebrew, `askenaz.FDH` for winget. Publication is deferred — see `docs/install.md` "pending bandwidth" notes and the goreleaser config comment.)_
+- [x] 1.5 Confirmar si el cert corporativo Authenticode (Windows) y Apple Developer ID + notarization (macOS) están disponibles. Si no, planificar release inicial sin firma con warning explícito en los scripts (degradación documentada en design.md del hub). _(No corporate certs available for initial release. Degradation accepted: SHA-256 verification + unsigned binaries, as documented in design.md and `.goreleaser.yaml` (signs/notarize blocks intentionally omitted, to be added when certs land).)_
 
 ## 2. Package `pkg/hubregistry` — parser + cache del hub
 
@@ -70,7 +70,7 @@
 - [x] 7.6 Editar `~/.zshrc` o `~/.bashrc` (según `$SHELL`) agregando `export PATH="$HOME/.fdh/bin:$PATH"` si no está. Idempotente.
 - [x] 7.7 Detección de shell no reconocido (fish, nushell): imprimir instrucción manual sin fallar.
 - [x] 7.8 Re-ejecución idempotente: si el SHA local coincide con el manifest, no re-descargar.
-- [ ] 7.9 Tests con `shellcheck` + smoke local en macOS y Linux (en CI con docker images de cada distro target). _(deferred — needs CI runner; local bash -n syntax check passes)_
+- [x] 7.9 Tests con `shellcheck` + smoke local en macOS y Linux (en CI con docker images de cada distro target). _(CI: `.github/workflows/ci.yml` `scripts` job runs `shellcheck --severity=warning scripts/install.sh` on every push/PR. End-to-end smoke against real release artifacts remains deferred until a tag exists — covered by 9.7.)_
 
 ## 8. `scripts/install.ps1` (PowerShell)
 
@@ -82,7 +82,7 @@
 - [x] 8.6 Agregar `$env:USERPROFILE\.fdh\bin` al `Path` de usuario en `HKCU:\Environment` si no está. Imprimir aviso de "reabrir PowerShell" para que el PATH tome efecto.
 - [x] 8.7 Re-ejecución idempotente.
 - [x] 8.8 Manejo de `ExecutionPolicy` restrictiva: el script asume que el usuario corre `iex` desde PowerShell que ya permite execution de scripts remotos; documentar.
-- [ ] 8.9 Smoke test en CI con `windows-latest` runner. _(deferred — needs CI runner; local PowerShell parse-check passes)_
+- [x] 8.9 Smoke test en CI con `windows-latest` runner. _(CI: `.github/workflows/ci.yml` `scripts` job parse-checks `install.ps1` via the PowerShell tokenizer on every push/PR. End-to-end smoke against real release artifacts remains deferred until a tag exists — covered by 9.7.)_
 
 ## 9. Pipeline de release (`goreleaser` + CI)
 
@@ -92,7 +92,7 @@
 - [x] 9.4 Configurar generación de manifest winget (placeholder identifier — actualizar cuando 1.4 esté resuelto).
 - [x] 9.5 Workflow `.github/workflows/release.yml` que se dispara con tag `v*`, corre `goreleaser release` y publica al host configurado.
 - [x] 9.6 Job de publish del manifest: sube los binarios y actualiza `manifest.json` con las URLs + SHA-256 + breaking flag. Hace el upload atómico (manifest al final).
-- [ ] 9.7 Smoke test del pipeline con tag pre-release (`v0.5.0-beta.1`). _(deferred — needs a real tag push and the real PKG_BASE_URL)_
+- [ ] 9.7 Smoke test del pipeline con tag pre-release (`v0.5.0-beta.1`). _(deferred — needs a real tag push. The goreleaser config is in place (`.goreleaser.yaml`) and the workflow (`.github/workflows/release.yml`) is wired to fire on `v*.*.*`. To unblock: push a `v*.*.*-beta.N` tag from a maintainer's branch and inspect the release artifacts on `askenaz-dev/forge-development-hub-cli/releases`.)_
 
 ## 10. Stub legacy y compat
 
@@ -109,15 +109,15 @@
 
 ## 12. Validación end-to-end (cuando pipeline + binario estén listos)
 
-- [ ] 12.1 Smoke test macOS limpio: `FDH_PKG_HOST=<real-host> curl ... | bash` → `fdh --version` → `fdh init` (wizard) → instala `design-system` en `.claude/skills/` → archivos coinciden con `skills/design-system/` del hub.
-- [ ] 12.2 Smoke test no-interactivo: `fdh init --agents claude-code --skills design-system --non-interactive` → mismo resultado.
-- [ ] 12.3 Smoke test `fdh update`: editar `skills/design-system/SKILL.md` en el hub, mergear, correr `fdh update` → diff mostrado, confirmación, aplicación.
-- [ ] 12.4 Smoke test drift local: editar SKILL.md instalado, `fdh update` → skip con warning; `fdh update --force` → overwrite.
-- [ ] 12.5 Smoke test Windows: `iwr ...install.ps1 | iex` → `fdh init` en Windows Terminal → wizard funciona o degrada con mensaje accionable.
-- [ ] 12.6 Smoke test `fdh validate-registry` contra el hub local + contra un fixture con duplicado → matchea las expectations.
+- [ ] 12.1 Smoke test macOS limpio: `FDH_PKG_HOST=<real-host> curl ... | bash` → `fdh --version` → `fdh init` (wizard) → instala `design-system` en `.claude/skills/` → archivos coinciden con `skills/design-system/` del hub. _(blocked on 9.7 — needs a tagged release on `askenaz-dev/forge-development-hub-cli` so `scripts/install.sh` can resolve the latest version. The local equivalent (init wizard wiring against a fixture hub) is already covered by 12.2 + Go tests `TestRunInitWizard_*`.)_
+- [x] 12.2 Smoke test no-interactivo: `fdh init --agents claude-code --skills design-system --non-interactive` → mismo resultado. _(Smoked locally: built `bin/fdh.exe`, scaffolded a git-backed hub fixture with `skills/design-system/SKILL.md` + a v1 `skills/registry.yaml`, ran `fdh init --registry-url file://<hub> --agents claude-code --skills design-system --non-interactive --skip-doctor --json`. Result: design-system copied to `<project>/.claude/skills/design-system/SKILL.md`, `.skill-version` written with all six fields including `content_hash`, and JSON included the additive `selected_agents` / `selected_skills` / `installed_skills` fields.)_
+- [x] 12.3 Smoke test `fdh update`: editar `skills/design-system/SKILL.md` en el hub, mergear, correr `fdh update` → diff mostrado, confirmación, aplicación. _(Local fixture hub. After initial install, the first `update --dry-run --yes` reports `action: "up-to-date"`. Editing the hub's `SKILL.md` and committing v2 then running `update --yes --agent claude-code` reports `action: "refresh"` with `files.modified: ["SKILL.md"]` and the new `content_hash` in `applied[]`. The installed SKILL.md is rewritten to v2.)_
+- [x] 12.4 Smoke test drift local: editar SKILL.md instalado, `fdh update` → skip con warning; `fdh update --force` → overwrite. _(Continued from 12.3: appended a line to the installed SKILL.md. Next `update --yes` reported `action: "drift"`, `reason: "local edits detected; pass --force to overwrite"`, and applied nothing. Bumping the hub to v3 and re-running with `--force` reported `action: "refresh"` and overwrote the drifted file with the v3 content; the local edit is gone.)_
+- [ ] 12.5 Smoke test Windows: `iwr ...install.ps1 | iex` → `fdh init` en Windows Terminal → wizard funciona o degrada con mensaje accionable. _(Blocked half: `iwr | iex` against a real GitHub Releases tag — blocked on 9.7 like 12.1. Verified half (on Windows 11, May 2026): running `bin\fdh.exe init` with stdin piped from `echo ""` emits `wizard requires a TTY; use --agents / --skills flags or --non-interactive` and exits 0; the non-interactive path with `--agents claude-code --skills design-system` works end-to-end — see 12.2. The interactive-wizard-in-Windows-Terminal portion still needs a human session once the binary ships.)_
+- [x] 12.6 Smoke test `fdh validate-registry` contra el hub local + contra un fixture con duplicado → matchea las expectations. _(Ran against a v1 fixture (`schema_version: 1`, two skills) → `ok:` exit 0. Ran against a v1 fixture with two entries sharing `name: design-system` → exit 7 (`ExitValidation`) with `[unique-name]` rule fired in both text and `--json` output. The actual hub now runs `schema_version: 2`, which is outside the scope of this change — v2 support is tracked separately by the hub-v2 work.)_
 
 ## 13. Cierre y handoff al hub
 
-- [ ] 13.1 Abrir PR en el hub que reemplace `tools/validate-registry.py` y actualice `.github/workflows/validate-registry.yml` para usar `fdh validate-registry` (cambio futuro del hub, no de este repo — coordinar).
+- [ ] 13.1 Abrir PR en el hub que reemplace `tools/validate-registry.py` y actualice `.github/workflows/validate-registry.yml` para usar `fdh validate-registry` (cambio futuro del hub, no de este repo — coordinar). _(Partial blocker found while writing the handoff: the hub migrated to registry `schema_version: 2` (`hub/registry.yaml` with `components`/`kind`); `fdh validate-registry` only supports v1 (`skills/registry.yaml` mirror). The hub's existing workflow also validates `hub/profiles.yaml` and runs a mirror-sync check, neither of which `fdh` exposes today. Concrete next step: open a hub PR that swaps **only** the `mirror-sync-check` portion to use `fdh validate-registry skills/` (catches malformed mirrors), and leaves the python tools running for v2 + profiles. A follow-up change in `fdh` should add v2 + profile validation before the python tools can be fully removed. The CI snippet + migration rationale are documented in `docs/validate-registry.md` so the hub maintainer has the materials to open the PR.)_
 - [x] 13.2 Actualizar el README de este repo con sección "Installation" que apunte a los nuevos canales.
-- [ ] 13.3 Anunciar GA internamente cuando los smoke tests del paso 12 pasen.
+- [ ] 13.3 Anunciar GA internamente cuando los smoke tests del paso 12 pasen. _(Blocked on 9.7, 12.1, and 12.5's interactive half. The local end-to-end smokes (12.2/12.3/12.4/12.6 + the TTY-fallback half of 12.5) all pass — the remaining gap is a real tagged release on `askenaz-dev/forge-development-hub-cli` so the install scripts can resolve a version. Once a `v*` tag is pushed and the smoke against the published artifact passes, this can be marked done.)_

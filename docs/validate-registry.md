@@ -106,27 +106,49 @@ fdh validate-registry .
 ## Migration from the Python validator
 
 The hub previously shipped `tools/validate-registry.py`. The Go
-implementation:
+implementation covers the v1 mirror (`skills/registry.yaml`):
 
-- Same set of rules, same exit-code semantics.
+- Same set of rules for the mirror, same exit-code semantics.
 - Same JSON output shape (additive — the Python version's keys map 1:1).
 - Faster (no Python interpreter startup; ~10× quicker on a cold cache).
 - Single binary to install — no `pip install pyyaml` step.
 
-To switch the hub's CI:
+### Scope of the current v1 migration
+
+`fdh validate-registry` reads **`skills/registry.yaml`** at the supplied
+repo root and applies the v1 rules. It does **not** yet cover:
+
+- The v2 source-of-truth at `hub/registry.yaml` (`components`/`kind`).
+- `hub/profiles.yaml`.
+- The mirror-sync check (`skills/registry.yaml` vs `hub/registry.yaml`).
+
+Those will be added by a follow-up change in `fdh` once v2 schema +
+profile types land. Until then, the python validators stay in the hub
+for v2 + profiles, and `fdh validate-registry` can replace the v1 mirror
+check.
+
+### Suggested hub PR (task 13.1)
 
 ```yaml
-# .github/workflows/validate-registry.yml — proposed
-- uses: actions/checkout@v4
-- name: Install fdh
-  run: curl -fsSL https://${{ vars.FDH_RELEASES_BASE }}/fdh/install.sh | bash
-- name: Validate registry
-  run: fdh validate-registry .
+# .github/workflows/validate-registry.yml — incremental migration
+jobs:
+  # Existing python jobs stay in place for v2 + profiles + mirror sync.
+  # Add a fast Go-binary job that double-checks the v1 mirror.
+  validate-registry-v1-mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install fdh
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/askenaz-dev/forge-development-hub-cli/main/scripts/install.sh | bash
+          echo "$HOME/.fdh/bin" >> "$GITHUB_PATH"
+      - name: Validate skills/registry.yaml (v1 mirror)
+        run: fdh validate-registry .
 ```
 
-The deprecation timeline lives in task 13.1 of the
-`implement-cli-distribution-and-interactive-init` change. Once the hub
-PR lands, `tools/validate-registry.py` can be deleted.
+Once `fdh` adds v2 + profile support, the python validators can be
+deleted and the workflow collapses to a single `fdh validate-registry`
+step.
 
 ## Troubleshooting
 
