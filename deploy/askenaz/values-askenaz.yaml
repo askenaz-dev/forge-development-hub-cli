@@ -1,0 +1,61 @@
+# Production Helm values for the askenaz.dev deployment of fdh-portal.
+#
+# Use:
+#   helm upgrade --install fdh-portal ./deploy/helm/fdh-portal \
+#     --namespace fdh --create-namespace \
+#     -f ./deploy/askenaz/values-askenaz.yaml
+#
+# This file is checked in. It contains NO secrets — those live in the
+# Kubernetes Secret created by setup-k8s.ps1.
+
+api:
+  image:
+    # Tag is set per release; use chart appVersion in dev. For a pinned
+    # release, override with `--set api.image.tag=v0.1.0` (or edit here).
+    tag: ""
+    pullPolicy: IfNotPresent
+
+web:
+  image:
+    tag: ""
+    pullPolicy: IfNotPresent
+
+# GHCR images are public — no pullSecret needed by default.
+imagePullSecrets: []
+
+portal:
+  registryURL: "https://github.com/askenaz-dev/forge-development-hub.git"
+  registryBranch: "main"
+  refreshInterval: "60s"
+
+oidc:
+  discoveryURL: "https://keycloak.askenaz.dev/realms/askenaz"
+  clientID: "fdh-portal"
+  clientSecretRef:
+    name: "fdh-portal-oidc"
+    key: "client_secret"
+  roleMapConfigMap: "fdh-portal-role-map"
+
+observability:
+  prometheus:
+    serviceMonitor: false   # flip to true once Prometheus/operator is in cluster
+    interval: 30s
+  otel:
+    endpoint: ""            # e.g. http://otel-collector.observability:4317
+
+ingress:
+  enabled: true
+  className: "nginx"
+  host: "fdh.askenaz.dev"
+  tls:
+    enabled: true
+    # Reuse the Cloudflare Origin Cert applied via setup-k8s.ps1.
+    secretName: "cloudflare-origin-tls"
+  annotations:
+    # Optional hardening (uncomment what you want):
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+service:
+  type: ClusterIP

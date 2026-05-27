@@ -89,6 +89,42 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+  scripts:
+    name: install-scripts (shellcheck + PowerShell parse-check)
+    # Lints scripts/install.sh with shellcheck and parse-checks
+    # scripts/install.ps1 with the PowerShell tokenizer. Both are
+    # deferred-with-CI tasks from
+    # openspec/changes/implement-cli-distribution-and-interactive-init/tasks.md
+    # (7.9 and 8.9). Smoke-running the scripts end-to-end is out of
+    # scope here because that requires real release artifacts; the goal
+    # of this job is to catch syntax regressions before a tag push.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: shellcheck install.sh
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck --severity=warning scripts/install.sh
+
+      - name: PowerShell parse-check install.ps1
+        shell: pwsh
+        run: |
+          $errors = $null
+          $tokens = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path scripts/install.ps1).Path,
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_ }
+            exit 1
+          }
+          Write-Host "install.ps1 parses cleanly."
+
   web:
     name: web (typecheck + i18n parity + build + a11y)
     runs-on: ubuntu-latest

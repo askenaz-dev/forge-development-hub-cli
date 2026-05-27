@@ -1,0 +1,16 @@
+# Role mapping consumed by the Go API. Maps Keycloak group memberships
+# (the `groups` claim) to portal roles. Loaded from a ConfigMap mounted at
+# /config/role-map.yaml in the API container.
+#
+# The portal recognizes these roles in precedence order:
+#   anonymous < consumer < author < reviewer < publisher < admin
+#
+# Unmapped authenticated users default to `consumer`. Unmapped anonymous
+# sessions are `anonymous`.
+
+claim: groups
+map:
+  fdh-admins: admin
+  fdh-publishers: publisher
+  fdh-reviewers: reviewer
+  fdh-authors: author
