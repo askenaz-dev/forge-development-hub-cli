@@ -66,6 +66,27 @@ func TestGolden_DoctorReportShape(t *testing.T) {
 	}
 }
 
+func TestGolden_RegistryHealthShape(t *testing.T) {
+	// Existing fields are stable; new fields (kind, transport) are
+	// optional/additive — they only appear in the JSON when set.
+	stable := cli.RegistryHealth{Configured: true, Source: "x", Reachable: true}
+	keys := keysOf(t, stable)
+	for _, k := range []string{"configured", "source", "reachable"} {
+		assert.True(t, keys[k], "RegistryHealth missing stable JSON key %q", k)
+	}
+	assert.False(t, keys["kind"], "kind must be omitempty when zero")
+	assert.False(t, keys["transport"], "transport must be omitempty when zero")
+
+	// When set, the new fields surface under their documented names.
+	full := cli.RegistryHealth{
+		Configured: true, Source: "x", Reachable: true,
+		Kind: "http", Transport: "http v1",
+	}
+	keysFull := keysOf(t, full)
+	assert.True(t, keysFull["kind"])
+	assert.True(t, keysFull["transport"])
+}
+
 func TestGolden_SearchHitShape(t *testing.T) {
 	r := cli.SearchHit{}
 	keys := keysOf(t, r)

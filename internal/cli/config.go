@@ -14,12 +14,19 @@ import (
 
 // SupportedConfigKeys is the closed set of keys `config set` accepts.
 var SupportedConfigKeys = map[string]string{
-	"registry.url":        "Remote URL of the registry git repository (HTTPS preferred)",
-	"registry.local_path": "Absolute path to a local clone of the registry",
-	"registry.branch":     "Branch of the registry to track (default: main)",
-	"defaults.scope":      "Default install scope when none is provided (user|project|auto)",
-	"cache.dir":           "Override the default cache directory",
-	"adapters.override":   "Path to a user-provided adapters.yaml that replaces individual agents",
+	"registry.url":                     "Remote URL of the registry (git remote or HTTP base URL)",
+	"registry.local_path":              "Absolute path to a local clone of the registry (forces git transport)",
+	"registry.branch":                  "Branch of the registry to track (default: main; git transport only)",
+	"registry.kind":                    "Registry transport: auto|git|http (default: auto)",
+	"registry.http.api_version":        "HTTP registry API version, e.g. v1 (default: v1)",
+	"registry.http.auth.bearer":        "Bearer token sent as 'Authorization: Bearer <token>' (HTTP registry)",
+	"registry.http.auth.basic.user":    "Basic auth username (HTTP registry)",
+	"registry.http.auth.basic.pass":    "Basic auth password (HTTP registry)",
+	"registry.http.auth.client_cert":   "Absolute path to PEM client certificate for mTLS (HTTP registry)",
+	"registry.http.auth.client_key":    "Absolute path to PEM client key for mTLS (HTTP registry)",
+	"defaults.scope":                   "Default install scope when none is provided (user|project|auto)",
+	"cache.dir":                        "Override the default cache directory (used by HTTP transport)",
+	"adapters.override":                "Path to a user-provided adapters.yaml that replaces individual agents",
 }
 
 func newConfigCmd(info BuildInfo) *cobra.Command {

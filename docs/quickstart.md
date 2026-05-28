@@ -104,6 +104,43 @@ fdh config set registry.branch main
 
 The registry is a regular Git repository laid out per the [bundle-and-registry spec](../../forge-development-hub/openspec/specs/skill-bundle-and-registry/spec.md). You can also point at a local clone via `registry.local_path` for air-gapped use.
 
+## 2c. Use an HTTP registry (no git required)
+
+`fdh` also speaks a static HTTP wire protocol — any web server hosting the registry tree under a `/v1/` prefix (`index.json`, `skills/<ns>/<name>/manifest.json`, `versions/<v>/bundle.tar.gz` + `bundle.sha256`) works. The HTTP transport skips `git clone`, doesn't require git on the host at all, and is the fastest path on a fresh machine (~kB per skill vs. ~150 MB for a full clone).
+
+```sh
+fdh config set registry.url https://pkg.askenaz.dev/registry/v1/
+# kind=auto (default) picks HTTP automatically because the URL has no .git suffix
+```
+
+The transport is chosen by `registry.kind`:
+
+| `registry.kind` | Behavior |
+|---|---|
+| `auto` (default) | URL `.git`/`git@`/`ssh://` → git; `https://` without `.git` → http |
+| `git` | Force git transport |
+| `http` | Force HTTP transport |
+
+Authentication options for private registries:
+
+```sh
+fdh config set registry.http.auth.bearer "$REGISTRY_TOKEN"     # bearer
+fdh config set registry.http.auth.basic.user alice              # basic
+fdh config set registry.http.auth.basic.pass s3cret
+fdh config set registry.http.auth.client_cert /etc/ssl/cli.crt  # mTLS
+fdh config set registry.http.auth.client_key  /etc/ssl/cli.key
+```
+
+Every key has an env-var override (`FDH_REGISTRY_KIND`, `FDH_REGISTRY_HTTP_BEARER`, `FDH_REGISTRY_HTTP_BASIC_USER`, `FDH_REGISTRY_HTTP_BASIC_PASS`, `FDH_REGISTRY_HTTP_API_VERSION`, `FDH_REGISTRY_HTTP_CLIENT_CERT`, `FDH_REGISTRY_HTTP_CLIENT_KEY`) — handy for CI.
+
+Confirm with `fdh doctor`:
+
+```
+Registry:
+  transport: http v1
+  source: http:https://pkg.askenaz.dev/registry/v1/?api=v1  [reachable]
+```
+
 ## 3. Run `doctor`
 
 ```sh

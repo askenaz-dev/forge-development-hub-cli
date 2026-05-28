@@ -121,6 +121,61 @@ Set `FDH_SKIP_POSTINSTALL=1` to skip the binary download entirely. Useful for:
 
 The wrapper will then look for `fdh` (or `fdh.exe` on Windows) anywhere on your `PATH`, not just inside the package.
 
+## HTTP registry: `401 Unauthorized` from `fdh search` / `install` / `doctor`
+
+The registry you're hitting requires authentication and the binary isn't sending any. The HTTP transport supports three modes, applied in order: bearer → basic → mTLS (client certs).
+
+```sh
+# Bearer token (most common)
+fdh config set registry.http.auth.bearer "$REGISTRY_TOKEN"
+# Or via env (preferred in CI):
+export FDH_REGISTRY_HTTP_BEARER="$REGISTRY_TOKEN"
+fdh search owasp
+```
+
+```sh
+# Basic auth
+fdh config set registry.http.auth.basic.user alice
+fdh config set registry.http.auth.basic.pass s3cret
+# Or via env:
+export FDH_REGISTRY_HTTP_BASIC_USER=alice
+export FDH_REGISTRY_HTTP_BASIC_PASS=s3cret
+```
+
+```sh
+# mTLS — both files must be PEM and live at absolute paths
+fdh config set registry.http.auth.client_cert /etc/ssl/cli.crt
+fdh config set registry.http.auth.client_key  /etc/ssl/cli.key
+```
+
+Confirm what the binary is sending with `fdh -v doctor` — the verbose log includes the auth method and the request URL (token values are never printed).
+
+## HTTP registry: mTLS handshake failure
+
+Symptoms: `registry unreachable: ... bad certificate` or `tls: handshake failure`.
+
+Common causes:
+
+- **Cert path doesn't exist.** Both `client_cert` and `client_key` must be absolute paths to existing PEM files. Use `fdh config get registry.http.auth.client_cert` to confirm; the path is read literally with no shell expansion.
+- **Cert / key mismatch.** The public cert in `client_cert` must be paired with the private key in `client_key`. Quick check: `openssl x509 -noout -modulus -in $cert | openssl md5` vs. `openssl rsa -noout -modulus -in $key | openssl md5` — the MD5s must match.
+- **CA the registry server uses isn't trusted by the host.** Add the registry's CA to the system trust store (macOS Keychain, Linux `/etc/ssl/certs`, Windows certificate manager).
+- **TLS 1.2 or older required.** The HTTP transport requires TLS 1.2+. If the registry is on an old cipher suite, upgrade the server.
+
+## HTTP registry: `cannot auto-detect registry transport from "<url>"`
+
+`registry.kind=auto` couldn't classify the URL. Either:
+
+- The URL scheme isn't `http://`, `https://`, `git@`, `ssh://`, `git://`, nor ends in `.git`.
+- The URL is malformed.
+
+Fix by setting `registry.kind` explicitly:
+
+```sh
+fdh config set registry.kind http   # or git
+```
+
+`registry.kind` always wins over auto-detection.
+
 ## Reporting bugs
 
 When opening an issue, include the output of:

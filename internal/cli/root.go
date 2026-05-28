@@ -72,11 +72,20 @@ detected and which directories it will write to.`
 
 // initConfig wires viper to read configuration from an explicit --config
 // path, the per-user config directory, and environment variables prefixed
-// with forge_INSTALLER_.
+// with forge_INSTALLER_ (legacy) plus explicit FDH_* bindings for the
+// newer keys.
 func initConfig(cmd *cobra.Command) error {
 	v := viper.GetViper()
 	v.SetEnvPrefix("forge_INSTALLER")
 	v.AutomaticEnv()
+
+	// Explicit FDH_* env bindings for the HTTP-registry keys. These keys
+	// are documented under the FDH_ prefix in the implementation
+	// contract; binding here lets them coexist with the legacy
+	// forge_INSTALLER_ auto-prefix.
+	for env, key := range fdhEnvBindings {
+		_ = v.BindEnv(key, env)
+	}
 
 	// Sensible defaults — used by config get if nothing else is set.
 	v.SetDefault("defaults.scope", "auto")
@@ -84,6 +93,8 @@ func initConfig(cmd *cobra.Command) error {
 	v.SetDefault("registry.url", "")
 	v.SetDefault("registry.local_path", "")
 	v.SetDefault("registry.branch", "main")
+	v.SetDefault("registry.kind", "auto")
+	v.SetDefault("registry.http.api_version", "v1")
 	v.SetDefault("adapters.override", defaultAdaptersOverridePath())
 
 	explicit, _ := cmd.Flags().GetString("config")

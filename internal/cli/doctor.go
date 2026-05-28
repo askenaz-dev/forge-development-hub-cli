@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/forge/fdh/pkg/adapters"
+	"github.com/forge/fdh/pkg/registry"
 )
 
 // DoctorReport is the JSON shape emitted by `doctor --json`.
@@ -43,6 +44,13 @@ type RegistryHealth struct {
 	Source     string `json:"source"`
 	Reachable  bool   `json:"reachable"`
 	Detail     string `json:"detail,omitempty"`
+	// Kind names the configured transport: "git" | "http" | "local".
+	// Optional/additive for backwards compatibility — older consumers
+	// that only key off Source/Reachable continue to work unchanged.
+	Kind string `json:"kind,omitempty"`
+	// Transport is a short human-friendly transport label, e.g. "http v1"
+	// or "git". Optional/additive alongside Kind.
+	Transport string `json:"transport,omitempty"`
 }
 
 // DoctorIssue records a single error/warning in the report.
@@ -88,6 +96,7 @@ func runDoctor(cmd *cobra.Command, args []string, info BuildInfo) error {
 	} else {
 		report.Registry.Configured = true
 		report.Registry.Source = rc.Registry.Source()
+		report.Registry.Kind, report.Registry.Transport = classifyRegistry(rc.Registry)
 		if _, err := rc.Registry.Index(rc.Ctx); err != nil {
 			report.Registry.Reachable = false
 			report.Registry.Detail = err.Error()
@@ -211,6 +220,9 @@ func printDoctorTable(w io.Writer, r DoctorReport) {
 		if r.Registry.Reachable {
 			state = "reachable"
 		}
+		if r.Registry.Transport != "" {
+			fmt.Fprintf(w, "  transport: %s\n", r.Registry.Transport)
+		}
 		fmt.Fprintf(w, "  source: %s  [%s]", r.Registry.Source, state)
 		if r.Registry.Detail != "" {
 			fmt.Fprintf(w, " (%s)", r.Registry.Detail)
@@ -238,5 +250,28 @@ func printDoctorTable(w io.Writer, r DoctorReport) {
 		for _, iss := range r.Issues {
 			fmt.Fprintf(w, "  [%s] %s\n", iss.Severity, iss.Message)
 		}
+	}
+}
+
+// classifyRegistry inspects the concrete type backing the Registry
+// interface and returns (kind, transport). "local" is reserved for
+// future use; today every GitRegistry — with or without a RemoteURL —
+// reports as "git" so callers can distinguish git from http without
+// reaching for an additional viper read.
+func classifyRegistry(r registry.Registry) (kind, transport string) {
+	switch rr := r.(type) {
+	case *registry.HTTPRegistry:
+		v := rr.APIVersion
+		if v == "" {
+			v = "v1"
+		}
+		return "http", "http " + v
+	case *registry.GitRegistry:
+		if rr.RemoteURL == "" {
+			return "local", "local"
+		}
+		return "git", "git"
+	default:
+		return "", ""
 	}
 }

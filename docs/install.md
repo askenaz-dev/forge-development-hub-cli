@@ -42,7 +42,7 @@ FDH_RELEASES_BASE=https://mirror.askenaz.dev/fdh \
 
 The two env vars are independent: `FDH_RELEASES_BASE` controls where the asset tarballs live, `FDH_LATEST_URL` controls the endpoint returning `{ "tag_name": "<v...>" }`. The latter must return JSON shaped like GitHub's Releases API.
 
-Once installed, the `fdh` binary itself ignores both vars — its single network dependency is the Git remote configured by `registry.url`.
+Once installed, the `fdh` binary itself ignores both vars — its network dependency is whichever registry you've configured: either the Git remote in `registry.url` (`fdh` will `git clone` lazily) or an HTTP base URL (no git on the host required — see [quickstart 2c](./quickstart.md#2c-use-an-http-registry-no-git-required)).
 
 ### Unknown shell (fish, nushell, …)
 

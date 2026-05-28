@@ -2,6 +2,22 @@ package cli
 
 import "os"
 
+// fdhEnvBindings maps FDH_* environment variables to their canonical
+// viper config keys. Used by initConfig to explicitly bind them — the
+// global SetEnvPrefix only covers the legacy forge_INSTALLER_* names.
+//
+// These bindings take precedence over config.yaml (the viper default)
+// and are read on each command invocation.
+var fdhEnvBindings = map[string]string{
+	"FDH_REGISTRY_KIND":             "registry.kind",
+	"FDH_REGISTRY_HTTP_API_VERSION": "registry.http.api_version",
+	"FDH_REGISTRY_HTTP_BEARER":      "registry.http.auth.bearer",
+	"FDH_REGISTRY_HTTP_BASIC_USER":  "registry.http.auth.basic.user",
+	"FDH_REGISTRY_HTTP_BASIC_PASS":  "registry.http.auth.basic.pass",
+	"FDH_REGISTRY_HTTP_CLIENT_CERT": "registry.http.auth.client_cert",
+	"FDH_REGISTRY_HTTP_CLIENT_KEY":  "registry.http.auth.client_key",
+}
+
 // envVar wraps os.Getenv so tests can stub the environment if they need
 // to. The CLI's existing config + adapter flow doesn't need this level
 // of indirection, but the init command reads FDH_DEFAULT_REGISTRY at

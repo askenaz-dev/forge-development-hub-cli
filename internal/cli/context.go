@@ -57,34 +57,148 @@ func buildRunContext(ctxIn context.Context, info BuildInfo, verbose bool) (*runC
 	}, nil
 }
 
+// buildRegistry constructs the configured Registry implementation. The
+// transport is chosen by `registry.kind` (auto | git | http) with the
+// default `auto` applying a URL heuristic:
+//
+//   - URL ends in .git or starts with git@/ssh://./git:// → GitRegistry
+//   - URL starts with https:// or http:// (no .git suffix) → HTTPRegistry
+//   - registry.local_path is set → GitRegistry in local-path mode
+//
+// An explicit `registry.kind` always wins.
 func buildRegistry(verbose bool) (registry.Registry, error) {
 	local := viper.GetString("registry.local_path")
 	remote := viper.GetString("registry.url")
 	if local == "" && remote == "" {
 		return nil, errors.New("no registry configured (set registry.local_path or registry.url)")
 	}
-	if local == "" {
-		// Derive a local cache path under the user config dir.
+
+	// local_path always means "GitRegistry pointed at this directory" —
+	// it predates registry.kind and keeps existing pilot setups working.
+	if local != "" {
+		return buildGitRegistry(local, remote, verbose), nil
+	}
+
+	kind := strings.ToLower(strings.TrimSpace(viper.GetString("registry.kind")))
+	if kind == "" {
+		kind = "auto"
+	}
+
+	switch kind {
+	case "git":
+		return buildGitRegistry("", remote, verbose), nil
+	case "http":
+		return buildHTTPRegistry(remote, verbose)
+	case "auto":
+		switch {
+		case isGitURL(remote):
+			return buildGitRegistry("", remote, verbose), nil
+		case isHTTPURL(remote):
+			return buildHTTPRegistry(remote, verbose)
+		default:
+			return nil, fmt.Errorf("cannot auto-detect registry transport from %q; set registry.kind to git or http", remote)
+		}
+	default:
+		return nil, fmt.Errorf("unknown registry.kind %q (expected auto|git|http)", kind)
+	}
+}
+
+// buildGitRegistry assembles a *GitRegistry from viper config. localPath
+// may be empty (in which case a cache path is derived from the URL); when
+// non-empty it overrides the cache layout (local-path mode).
+func buildGitRegistry(localPath, remote string, verbose bool) *registry.GitRegistry {
+	if localPath == "" {
 		base := defaultConfigDir()
 		if base == "" {
 			base = "."
 		}
-		safe := sanitizePathSegment(remote)
-		local = filepath.Join(base, "registry-cache", safe)
+		localPath = filepath.Join(base, "registry-cache", sanitizePathSegment(remote))
 	}
 	branch := viper.GetString("registry.branch")
-	var logger func(string)
-	if verbose {
-		logger = func(line string) {
-			fmt.Fprintln(os.Stderr, "[registry] "+line)
-		}
-	}
 	return &registry.GitRegistry{
-		LocalPath: local,
+		LocalPath: localPath,
 		RemoteURL: remote,
 		Branch:    branch,
-		Logger:    logger,
+		Logger:    verboseRegistryLogger(verbose),
+	}
+}
+
+// buildHTTPRegistry assembles a *HTTPRegistry from viper config.
+//
+//   - BaseURL is normalized to always end in "/" so URL composition is sane.
+//   - CacheDir defaults to <userCacheDir>/fdh/http-cache/ (XDG-friendly).
+//   - APIVersion defaults to "v1".
+//   - Auth is populated from registry.http.auth.* keys; zero-valued
+//     fields mean "no auth on that channel".
+func buildHTTPRegistry(remote string, verbose bool) (*registry.HTTPRegistry, error) {
+	if remote == "" {
+		return nil, errors.New("registry.kind=http but registry.url is empty")
+	}
+	if !isHTTPURL(remote) {
+		return nil, fmt.Errorf("registry.kind=http requires an http(s) URL, got %q", remote)
+	}
+	base := remote
+	if !strings.HasSuffix(base, "/") {
+		base += "/"
+	}
+
+	apiVersion := viper.GetString("registry.http.api_version")
+	if apiVersion == "" {
+		apiVersion = "v1"
+	}
+
+	cacheDir := viper.GetString("cache.dir")
+	if cacheDir == "" {
+		root, err := os.UserCacheDir()
+		if err != nil || root == "" {
+			// Fall back to the config dir if the OS doesn't expose a
+			// separate cache dir.
+			root = defaultConfigDir()
+		}
+		if root == "" {
+			return nil, errors.New("cannot determine user cache directory for HTTP registry")
+		}
+		cacheDir = filepath.Join(root, "fdh", "http-cache")
+	}
+
+	return &registry.HTTPRegistry{
+		BaseURL:    base,
+		APIVersion: apiVersion,
+		CacheDir:   cacheDir,
+		Auth: registry.HTTPAuth{
+			Bearer:     viper.GetString("registry.http.auth.bearer"),
+			BasicUser:  viper.GetString("registry.http.auth.basic.user"),
+			BasicPass:  viper.GetString("registry.http.auth.basic.pass"),
+			ClientCert: viper.GetString("registry.http.auth.client_cert"),
+			ClientKey:  viper.GetString("registry.http.auth.client_key"),
+		},
+		Logger: verboseRegistryLogger(verbose),
 	}, nil
+}
+
+func verboseRegistryLogger(verbose bool) func(string) {
+	if !verbose {
+		return nil
+	}
+	return func(line string) {
+		fmt.Fprintln(os.Stderr, "[registry] "+line)
+	}
+}
+
+// isGitURL reports whether u looks like a git remote (suffix .git or one
+// of the git/ssh URL schemes).
+func isGitURL(u string) bool {
+	return strings.HasSuffix(u, ".git") ||
+		strings.HasPrefix(u, "git@") ||
+		strings.HasPrefix(u, "ssh://") ||
+		strings.HasPrefix(u, "git://")
+}
+
+// isHTTPURL reports whether u looks like an HTTP(S) URL without a .git
+// suffix. The .git check runs first in callers so an https GitHub clone
+// URL still routes through Git.
+func isHTTPURL(u string) bool {
+	return strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://")
 }
 
 // detectProjectRoot walks up from CWD looking for the closest directory that
