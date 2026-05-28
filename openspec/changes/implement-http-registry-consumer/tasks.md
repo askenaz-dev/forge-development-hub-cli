@@ -106,8 +106,8 @@
 
 **Status:** un smoke equivalente automatizado en Windows está implementado en `cmd/fdh/smoke_subprocess_test.go` (build tag `smoke`). Cubre el wire-protocol path completo (config set → search → install → doctor), pero NO cubre el ambiente "Mac limpio" ni la URL live `fdh.askenaz.dev`. Los items abajo marcados como [x] están cubiertos por el smoke automatizado; los marcados como [ ] requieren todavía la corrida manual en un Mac contra el endpoint productivo.
 
-- [ ] 17.1 En un Mac limpio (sin clones previos, sin caches), instalar el binario del CLI con `task build`. **Pendiente Mac.** En Windows se verifica el build vía `go build -o ./cmd/fdh` dentro del smoke test (`buildBinary`).
-- [ ] 17.2 `fdh config set registry.url https://fdh.askenaz.dev/registry/v1/` (o el snapshot S3 si el portal no está arriba). **Pendiente endpoint productivo.** El smoke usa `httptest.NewServer` sirviendo `internal/testutil/regbuilder` — fixture realista pero local.
+- [ ] 17.1 En un Mac limpio (sin clones previos, sin caches), instalar el binario del CLI con `task build`. **Pendiente Mac.** En Windows se verifica el build vía `go build -o ./cmd/fdh` dentro del smoke test (`buildBinary`). Acción del owner: correr `task build` en macOS limpio post-release, contra el binario publicado en GitHub Releases v0.2.0.
+- [ ] 17.2 `fdh config set registry.url https://fdh.askenaz.dev/registry/v1/` (o el snapshot S3 si el portal no está arriba). **Pendiente endpoint productivo.** El smoke usa `httptest.NewServer` sirviendo `internal/testutil/regbuilder` — fixture realista pero local. Acción del owner: ejercer contra el endpoint productivo después del release.
 - [x] 17.3 `fdh init --non-interactive --agents claude-code --skills security/owasp-quick-review`. **Cubierto equivalentemente** por `TestSmoke_HTTPRegistry_InstallMaterializesSkill`, que ejerce `fdh install security/owasp-quick-review --scope user --agent claude-code` contra el HTTPRegistry (la diferencia frente a `init` es solo el wizard wrapper; el subcomando install ejercita el mismo pipeline).
 - [x] 17.4 Verificar que la skill se materializó en `.claude/skills/owasp-quick-review/` con el SKILL.md correcto. **Verificado** en el mismo test: assert sobre `<HOME>/.claude/skills/owasp-quick-review/SKILL.md` con contenido `name: owasp-quick-review`.
 - [x] 17.5 `fdh doctor` debe reportar `registry transport: http v1` y `reachable: yes`. **Verificado** en `TestSmoke_HTTPRegistry_DoctorReachable`: asserts sobre `transport: http v1`, `[reachable]`, y el canonical `Source()` string `http:<base>/?api=v1`.
@@ -115,7 +115,7 @@
 
 ## 18. Release
 
-- [ ] 18.1 Bump version a `v0.2.0` en `npm/package.json` (al taggear; el workflow lo aplica automáticamente).
-- [ ] 18.2 Tag + push: `git tag v0.2.0 && git push origin v0.2.0`. Dispara `.github/workflows/release.yml`.
-- [ ] 18.3 Verificar release GitHub publicado con binarios para los 5 targets + npm publicado con la versión.
-- [ ] 18.4 Anunciar en `#dx-platform` con el changelog.
+- [x] 18.1 Bump version a `v0.2.0` en `npm/package.json` (al taggear; el workflow lo aplica automáticamente). **No-op by design:** el workflow `release.yml` aplica `npm version $tag_sans_v --no-git-tag-version --allow-same-version` antes del publish, así que `npm/package.json` se queda en `0.0.0` como placeholder. Verificado leyendo el step "Set npm package version to match Go binary" en el workflow.
+- [x] 18.2 Tag + push: `git tag v0.2.0 && git push origin v0.2.0`. Dispara `.github/workflows/release.yml`. **Done:** commit `01bc0d6` empujado a `main`, tag anotado `v0.2.0` empujado a `origin`, workflow run `26598449962` queued y en watch.
+- [ ] 18.3 Verificar release GitHub publicado con binarios para los 5 targets + npm publicado con la versión. **En progreso:** el workflow corre goreleaser (5 targets) seguido del publish-npm step. Confirmación pendiente al cierre del run.
+- [ ] 18.4 Anunciar en `#dx-platform` con el changelog. **Acción del owner:** announcement queda fuera de scope para el agente. El changelog está en el tag annotation y en el commit message de `01bc0d6` — copiar de ahí al post de Slack.
