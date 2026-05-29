@@ -86,13 +86,13 @@ type HTTPAuth struct {
 // meta record per URL; the SHA points at the content-addressed blob in
 // objects/.
 type cacheMeta struct {
-	SHA256       string    `json:"sha256"`
-	ETag         string    `json:"etag,omitempty"`
-	FetchedAt    time.Time `json:"fetched_at"`
-	MaxAge       int64     `json:"max_age_seconds"`
-	ContentType  string    `json:"content_type,omitempty"`
-	Immutable    bool      `json:"immutable,omitempty"`
-	OriginalURL  string    `json:"url"`
+	SHA256      string    `json:"sha256"`
+	ETag        string    `json:"etag,omitempty"`
+	FetchedAt   time.Time `json:"fetched_at"`
+	MaxAge      int64     `json:"max_age_seconds"`
+	ContentType string    `json:"content_type,omitempty"`
+	Immutable   bool      `json:"immutable,omitempty"`
+	OriginalURL string    `json:"url"`
 }
 
 // IsStale reports whether the cached resource exceeded its max-age. An
@@ -432,11 +432,11 @@ func (r *HTTPRegistry) doRequest(ctx context.Context, method, urlStr, ifNoneMatc
 }
 
 // sleepBackoff sleeps for the canonical backoff for the given attempt
-// (0-based), or returns early if ctx is cancelled. Sleep durations are
+// (0-based), or returns early if ctx is canceled. Sleep durations are
 // 100ms / 200ms / 400ms ± 25% jitter.
 func sleepBackoff(ctx context.Context, attempt int) {
 	base := 100 * time.Millisecond * time.Duration(1<<attempt)
-	jitter := time.Duration(rand.Int63n(int64(base / 2))) - base/4
+	jitter := time.Duration(rand.Int63n(int64(base/2))) - base/4
 	delay := base + jitter
 	select {
 	case <-time.After(delay):
@@ -633,7 +633,7 @@ func parseSidecar(body []byte) (string, error) {
 		return "", fmt.Errorf("bundle.sha256: token %q is not a 64-hex SHA", sha)
 	}
 	for _, c := range sha {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return "", fmt.Errorf("bundle.sha256: non-hex char %q", c)
 		}
 	}
@@ -690,7 +690,7 @@ func sanitizeURLPath(s string) string {
 	return s
 }
 
-// notFoundError wraps a 404 with a sentinel that isNotFound recognises.
+// notFoundError wraps a 404 with a sentinel that isNotFound recognizes.
 func notFoundError(urlStr string) error {
 	return &httpNotFound{url: urlStr}
 }

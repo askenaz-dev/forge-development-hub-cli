@@ -290,10 +290,8 @@ func TestHTTPRegistry_FetchBundle_ManifestHashMismatchAborts(t *testing.T) {
 	manifestPath := filepath.Join(root, "skills", "code-review", "standard", "manifest.json")
 	data, err := os.ReadFile(manifestPath)
 	require.NoError(t, err)
-	out := strings.Replace(string(data), `"content_hash"`, `"content_hash_disabled","unused":"x","content_hash"`, 1)
-	// The previous replace produced an unknown field. Instead substitute the
-	// hex hash with a deterministic wrong value, preserving JSON shape.
-	out = string(data)
+	// Substitute the hex hash with a deterministic wrong value, preserving JSON shape.
+	out := string(data)
 	hashRe := strings.Index(out, `"content_hash":`)
 	require.NotEqual(t, -1, hashRe)
 	colon := strings.Index(out[hashRe:], `:`)

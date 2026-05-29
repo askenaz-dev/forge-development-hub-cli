@@ -160,8 +160,8 @@ func TestConfig_SetAndGetRoundTrip(t *testing.T) {
 	resetViper(t)
 	cmd := &cobra.Command{}
 	for k, val := range map[string]string{
-		"registry.kind":              "http",
-		"registry.http.auth.bearer":  "abc123",
+		"registry.kind":                 "http",
+		"registry.http.auth.bearer":     "abc123",
 		"registry.http.auth.basic.user": "bob",
 	} {
 		require.NoError(t, runConfigSetNoPersist(cmd, []string{k, val}))
