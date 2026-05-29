@@ -46,7 +46,7 @@ observability:
 ingress:
   enabled: true
   className: "nginx"
-  host: "fdh.askenaz.dev"
+  host: "agent-skills.askenaz.dev"
   tls:
     enabled: true
     # Reuse the Cloudflare Origin Cert applied via setup-k8s.ps1.

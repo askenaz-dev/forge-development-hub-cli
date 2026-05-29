@@ -131,6 +131,126 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  # --- Wire-protocol endpoints ----------------------------------------------
+  # The contract for these endpoints lives in the `hub-http-registry`
+  # specification in forge-development-hub. Each path uses a per-path
+  # `servers:` override so the URL is rooted at "/" rather than the UI
+  # `/api/v1` prefix.
+  /v1/index.json:
+    servers:
+      - url: /
+        description: Wire-protocol root (consumed by pkg/registry.HTTPRegistry)
+    get:
+      operationId: getWireIndex
+      summary: Top-level catalog of skill components (wire protocol)
+      responses:
+        "200":
+          description: Catalog snapshot
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireIndex"
+        "304":
+          description: Not modified (If-None-Match matched current ETag)
+        "503":
+          description: Hub catalog not yet mounted on this pod
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireError"
+
+  /v1/{kindPlural}/{namespace}/{name}/manifest.json:
+    servers:
+      - url: /
+    get:
+      operationId: getWireManifest
+      summary: Per-component manifest (wire protocol)
+      parameters:
+        - $ref: "#/components/parameters/KindPlural"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+      responses:
+        "200":
+          description: Component manifest
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireManifest"
+        "304":
+          description: Not modified
+        "404":
+          description: Component or namespace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireError"
+
+  /v1/{kindPlural}/{namespace}/{name}/versions/{version}/bundle.tar.gz:
+    servers:
+      - url: /
+    get:
+      operationId: getWireBundleTarball
+      summary: Deterministic gzipped tarball of a component version
+      parameters:
+        - $ref: "#/components/parameters/KindPlural"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+        - $ref: "#/components/parameters/Version"
+      responses:
+        "200":
+          description: Gzipped tarball bytes (deterministic across builds)
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control:
+              schema: { type: string, default: "public, max-age=31536000, immutable" }
+          content:
+            application/gzip:
+              schema: { type: string, format: binary }
+        "304":
+          description: Not modified
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireError"
+
+  /v1/{kindPlural}/{namespace}/{name}/versions/{version}/bundle.sha256:
+    servers:
+      - url: /
+    get:
+      operationId: getWireBundleSidecar
+      summary: Canonical content-hash sidecar for the bundle
+      parameters:
+        - $ref: "#/components/parameters/KindPlural"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+        - $ref: "#/components/parameters/Version"
+      responses:
+        "200":
+          description: "Single line: <hex>  bundle.tar.gz\\n"
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control:
+              schema: { type: string, default: "public, max-age=31536000, immutable" }
+          content:
+            text/plain:
+              schema: { type: string }
+        "304":
+          description: Not modified
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireError"
+
 components:
   parameters:
     Namespace:
@@ -148,6 +268,14 @@ components:
       name: version
       required: true
       schema: { type: string }
+    KindPlural:
+      in: path
+      name: kindPlural
+      required: true
+      description: Plural URL segment identifying the component kind.
+      schema:
+        type: string
+        enum: [skills, rules, agents, hooks]
 
   responses:
     NotFound:
@@ -257,6 +385,71 @@ components:
       required: [error]
       properties:
         error: { type: string }
+
+    # --- Wire-protocol schemas ---
+    WireIndex:
+      type: object
+      required: [schema_version, registry, skills]
+      properties:
+        schema_version: { type: integer, enum: [1] }
+        registry: { type: string }
+        skills:
+          type: array
+          items: { $ref: "#/components/schemas/WireIndexEntry" }
+
+    WireIndexEntry:
+      type: object
+      required: [namespace, name, description, owner_team, latest_version, latest_hash, scan_status]
+      properties:
+        namespace: { type: string, enum: [forge] }
+        name: { type: string }
+        description: { type: string }
+        owner_team: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        latest_version: { type: string }
+        latest_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        scan_status: { type: string, enum: [pass, warn, fail, none] }
+
+    WireManifest:
+      type: object
+      required: [schema_version, namespace, name, description, owner_team, latest, versions]
+      properties:
+        schema_version: { type: integer, enum: [1] }
+        namespace: { type: string, enum: [forge] }
+        name: { type: string }
+        description: { type: string }
+        owner_team: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        latest: { type: string }
+        versions:
+          type: array
+          items: { $ref: "#/components/schemas/WireVersion" }
+
+    WireVersion:
+      type: object
+      required: [version, content_hash, published_at, published_by, scan_status]
+      properties:
+        version: { type: string }
+        content_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        published_at: { type: string, format: date-time }
+        published_by: { type: string }
+        scan_status: { type: string, enum: [pass, warn, fail, none] }
+
+    WireError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [not_found, hub_not_ready, catalog_unreadable, encode_failed, tarball_build_failed, unsupported_entry, hash_failed]
+        namespace: { type: string }
+        name: { type: string }
+        version: { type: string }
+        message: { type: string }
         message: { type: string }
         namespace: { type: string }
         name: { type: string }

@@ -94,6 +94,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
 
+	// Wire-protocol endpoints (consumed by pkg/registry.HTTPRegistry).
+	mux.HandleFunc("GET /v1/index.json", s.handleWireIndex)
+	mux.HandleFunc("GET /v1/{kindPlural}/{namespace}/{name}/manifest.json", s.handleWireManifest)
+	mux.HandleFunc("GET /v1/{kindPlural}/{namespace}/{name}/versions/{version}/bundle.tar.gz", s.handleWireBundleTarball)
+	mux.HandleFunc("GET /v1/{kindPlural}/{namespace}/{name}/versions/{version}/bundle.sha256", s.handleWireBundleSidecar)
+
 	mux.HandleFunc("GET /api/v1/skills", s.handleListSkills)
 	mux.HandleFunc("GET /api/v1/skills/{namespace}/{name}", s.handleGetSkill)
 	mux.HandleFunc("GET /api/v1/skills/{namespace}/{name}/versions/{version}", s.handleGetVersion)

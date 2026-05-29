@@ -39,6 +39,12 @@ spec:
               value: {{ .Values.portal.refreshInterval | quote }}
             - name: FDH_PORTAL_REGISTRY_LOCAL_PATH
               value: /var/fdh/registry
+            # The wire-protocol handlers (/v1/*) read the hub catalog from
+            # this filesystem path. We reuse the same GitRegistry clone dir
+            # so wire handlers see the catalog as soon as the first refresh
+            # finishes. No separate git-sync sidecar needed for v1.
+            - name: FDH_PORTAL_HUB_PATH
+              value: /var/fdh/registry
             - name: OIDC_DISCOVERY_URL
               value: {{ .Values.oidc.discoveryURL | quote }}
             - name: OIDC_CLIENT_ID

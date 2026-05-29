@@ -35,7 +35,7 @@ import (
 // keep the dispatcher / call sites transport-agnostic.
 type HTTPRegistry struct {
 	// BaseURL is the absolute URL the registry tree is rooted at.
-	// MUST end with "/". Example: "https://pkg.askenaz.dev/registry/v1/".
+	// MUST end with "/". Example: "https://agent-skills.askenaz.dev/v1/".
 	BaseURL string
 
 	// APIVersion is the protocol version surfaced by the wire URLs. The

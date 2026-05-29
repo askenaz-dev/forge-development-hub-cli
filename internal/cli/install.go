@@ -18,6 +18,7 @@ import (
 	"github.com/forge/fdh/pkg/portability"
 	"github.com/forge/fdh/pkg/provenance"
 	"github.com/forge/fdh/pkg/registry"
+	"github.com/forge/fdh/pkg/signing"
 )
 
 // InstallResult is the JSON shape emitted by `install --json`.
@@ -117,6 +118,19 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 	}
 	defer bp.Cleanup()
 
+	// Verify the version's signature (capability bundle-signing). The signature
+	// (a cosign bundle) travels in the manifest's reserved `signature` field and
+	// attests the canonical content_hash. Verification shells out to cosign when
+	// available; FDH_REQUIRE_SIGNATURES makes a verifiable signature mandatory.
+	sigField := ""
+	if ver := manifest.FindVersion(version); ver != nil {
+		sigField = ver.Signature
+	}
+	signer, sigErr := signing.Check(rc.Ctx, signing.PolicyFromEnv(), bp.Hash, sigField, signing.CosignVerifierFromEnv())
+	if sigErr != nil {
+		return Wrap(ExitGenericFailure, fmt.Errorf("signature check for %s/%s@%s: %w", namespace, name, version, sigErr))
+	}
+
 	// Load the bundle, validate, lint.
 	b, err := bundle.Load(bp.Path)
 	if err != nil {
@@ -187,6 +201,7 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 			Scope:            string(scope),
 			Path:             p.Path,
 			InstallerVersion: info.Version,
+			Signature:        signer,
 		}
 		if err := provenance.WriteSidecar(p.Path, meta); err != nil {
 			return Wrap(ExitGenericFailure, fmt.Errorf("write sidecar: %w", err))

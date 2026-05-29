@@ -109,7 +109,7 @@ The registry is a regular Git repository laid out per the [bundle-and-registry s
 `fdh` also speaks a static HTTP wire protocol — any web server hosting the registry tree under a `/v1/` prefix (`index.json`, `skills/<ns>/<name>/manifest.json`, `versions/<v>/bundle.tar.gz` + `bundle.sha256`) works. The HTTP transport skips `git clone`, doesn't require git on the host at all, and is the fastest path on a fresh machine (~kB per skill vs. ~150 MB for a full clone).
 
 ```sh
-fdh config set registry.url https://pkg.askenaz.dev/registry/v1/
+fdh config set registry.url https://agent-skills.askenaz.dev/v1/
 # kind=auto (default) picks HTTP automatically because the URL has no .git suffix
 ```
 
@@ -138,7 +138,7 @@ Confirm with `fdh doctor`:
 ```
 Registry:
   transport: http v1
-  source: http:https://pkg.askenaz.dev/registry/v1/?api=v1  [reachable]
+  source: http:https://agent-skills.askenaz.dev/v1/?api=v1  [reachable]
 ```
 
 ## 3. Run `doctor`
