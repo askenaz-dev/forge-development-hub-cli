@@ -284,30 +284,43 @@ export async function extractTarball(
   expectedFilename: string,
 ): Promise<string> {
   await fs.mkdir(destDir, { recursive: true });
-  // goreleaser ships .tar.gz for linux/darwin and .zip for windows. `tar`
-  // (bsdtar, built into Windows 10 1809+ and macOS) extracts both: `-xzf` for
-  // gzip tarballs, `-xf` for zip. We run with cwd=destDir and pass the BARE
-  // filename (not the absolute path) so bsdtar on Windows doesn't misparse a
-  // path containing '@' (the '@scope' node_modules dir) or ':' (drive letter)
-  // as a remote user@host:path spec. The archive is written into destDir by
-  // the caller, so the basename resolves against cwd.
+  // goreleaser ships .tar.gz for linux/darwin and .zip for windows; extract
+  // each with a tool that reliably handles it on that OS.
   const isZip = tarPath.toLowerCase().endsWith(".zip");
-  const archiveName = path.basename(tarPath);
-  const tarArgs = isZip ? ["-xf", archiveName] : ["-xzf", archiveName];
-  const result = spawnSync("tar", tarArgs, {
-    cwd: destDir,
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding: "utf8",
-  });
+  let result;
+  if (isZip) {
+    // Windows .zip. Use PowerShell's Expand-Archive rather than `tar`: a bare
+    // `tar` on Windows can resolve to git's GNU tar (which cannot read zip),
+    // and bsdtar misparses '@scope' absolute paths as remote hosts.
+    // -LiteralPath handles paths containing '@' and ':' safely.
+    result = spawnSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `Expand-Archive -LiteralPath ${psQuote(tarPath)} -DestinationPath ${psQuote(destDir)} -Force`,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" },
+    );
+  } else {
+    // .tar.gz on macOS/Linux. Run with cwd=destDir + the bare filename so
+    // bsdtar (macOS) doesn't misparse an absolute path containing '@' (the
+    // '@scope' node_modules dir) as a remote user@host:path spec.
+    result = spawnSync("tar", ["-xzf", path.basename(tarPath)], {
+      cwd: destDir,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf8",
+    });
+  }
   if (result.error) {
     throw new ExtractionError(
-      `failed to run tar: ${result.error.message}. ` +
-        `Ensure 'tar' is on PATH (built-in on Windows 10 1809+, macOS, Linux).`,
+      `failed to extract ${path.basename(tarPath)}: ${result.error.message}.`,
     );
   }
   if (result.status !== 0) {
     throw new ExtractionError(
-      `tar exited with code ${result.status}: ${result.stderr.trim()}`,
+      `extraction of ${path.basename(tarPath)} exited with code ${result.status}: ${(result.stderr ?? "").trim()}`,
     );
   }
   const binPath = path.join(destDir, expectedFilename);
@@ -323,6 +336,11 @@ export async function extractTarball(
     await fs.chmod(binPath, 0o755);
   }
   return binPath;
+}
+
+/** Single-quote a string for safe interpolation into a PowerShell command. */
+function psQuote(s: string): string {
+  return `'${s.replace(/'/g, "''")}'`;
 }
 
 export class ExtractionError extends Error {
