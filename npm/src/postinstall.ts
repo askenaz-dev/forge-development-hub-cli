@@ -63,12 +63,14 @@ interface DownloadPaths {
 /**
  * Build the URLs to download the binary tarball + its SHA-256 sidecar.
  *
- * Matches the convention used by goreleaser uploading to GitHub Releases:
+ * Matches goreleaser's actual GitHub Releases naming (single source of truth):
  *
- *   <releases-base>/download/v<version>/fdh_v<version>_<os>_<arch>.tar.gz
- *   <releases-base>/download/v<version>/fdh_v<version>_<os>_<arch>.tar.gz.sha256
+ *   <releases-base>/download/v<version>/fdh_<version>_<os>_<arch>.tar.gz   (linux/darwin)
+ *   <releases-base>/download/v<version>/fdh_<version>_windows_amd64.zip     (windows)
+ *   <archive>.sha256
  *
- * Targets like `darwin-arm64` map to filename segment `darwin_arm64`.
+ * The version has NO "v" in the filename (only in the tag/path); Windows ships
+ * a .zip, not a .tar.gz. Targets like `darwin-arm64` map to `darwin_arm64`.
  *
  * `releasesBase` may include or omit the protocol; it is normalized.
  * Private mirrors that follow the same per-tag layout can override
@@ -82,10 +84,12 @@ function buildUrls(releasesBase: string, version: string, target: SupportedTarge
   if (!/^https?:\/\//.test(base)) {
     base = `https://${base}`;
   }
-  const cleanVer = version.replace(/^v/, ""); // canonical: 0.7.2
-  const tag = `v${cleanVer}`; // canonical: v0.7.2
+  const cleanVer = version.replace(/^v/, ""); // 0.2.0 — no "v" in the filename
+  const tag = `v${cleanVer}`; // v0.2.0 — the release tag, used only in the URL path
   const filenameTarget = target.replace("-", "_"); // darwin-arm64 → darwin_arm64
-  const tarballName = `fdh_${tag}_${filenameTarget}.tar.gz`;
+  // goreleaser: fdh_<ver>_<os>_<arch>.tar.gz (linux/darwin), .zip on windows.
+  const ext = target.startsWith("windows") ? "zip" : "tar.gz";
+  const tarballName = `fdh_${cleanVer}_${filenameTarget}.${ext}`;
   const downloadBase = `${base}/download/${tag}`;
   return {
     tarballUrl: `${downloadBase}/${tarballName}`,

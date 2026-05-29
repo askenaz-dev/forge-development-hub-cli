@@ -284,7 +284,16 @@ export async function extractTarball(
   expectedFilename: string,
 ): Promise<string> {
   await fs.mkdir(destDir, { recursive: true });
-  const result = spawnSync("tar", ["-xzf", tarPath, "-C", destDir], {
+  // goreleaser ships .tar.gz for linux/darwin and .zip for windows. The `tar`
+  // binary (bsdtar, built into Windows 10 1809+ and macOS) extracts both:
+  // `-xzf` for gzip tarballs, `-xf` for zip (bsdtar auto-detects the format).
+  // A .zip is only ever downloaded on a Windows host, so GNU tar on Linux
+  // (which cannot read zip) never sees one.
+  const isZip = tarPath.toLowerCase().endsWith(".zip");
+  const tarArgs = isZip
+    ? ["-xf", tarPath, "-C", destDir]
+    : ["-xzf", tarPath, "-C", destDir];
+  const result = spawnSync("tar", tarArgs, {
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf8",
   });
