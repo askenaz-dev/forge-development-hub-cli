@@ -10,7 +10,7 @@
 //
 // Idempotent. Fails fast with actionable messages on any error.
 
-import { promises as fs } from "node:fs";
+import { promises as fs, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,8 +37,8 @@ import {
 function readPkgVersion(packageRoot: string): string {
   // Synchronous read at script start; throws if package.json is unreadable.
   const pkgPath = path.join(packageRoot, "package.json");
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const text = require("node:fs").readFileSync(pkgPath, "utf8");
+  // Synchronous, ESM-safe read (this file ships as ESM — `require` is undefined).
+  const text = readFileSync(pkgPath, "utf8");
   const parsed = JSON.parse(text) as { version?: string };
   if (!parsed.version) {
     throw new Error(`postinstall: package.json at ${pkgPath} has no "version" field`);
