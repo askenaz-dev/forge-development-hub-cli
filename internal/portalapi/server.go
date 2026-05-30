@@ -182,6 +182,20 @@ func (s *Server) Refresh(ctx context.Context) error {
 	defer s.mu.Unlock()
 
 	start := time.Now()
+	// Ensure the hub content is present at HubPath. This deployment shares a
+	// single checkout dir (no git-sync sidecar): clone/refresh the content
+	// repo into HubPath, then build the catalog from its working tree.
+	if s.cfg.RegistryURL != "" {
+		syncReg := &registry.GitRegistry{
+			LocalPath: s.cfg.HubPath,
+			RemoteURL: s.cfg.RegistryURL,
+			Branch:    s.cfg.RegistryBranch,
+			Logger:    func(line string) { s.logger.Info("hub sync", "msg", line) },
+		}
+		if err := syncReg.Sync(ctx); err != nil {
+			s.logger.Warn("hub content sync failed; building from on-disk content", "err", err)
+		}
+	}
 	idx, err := buildHubIndex(s.cfg.HubPath)
 	if err != nil {
 		if s.metrics != nil {

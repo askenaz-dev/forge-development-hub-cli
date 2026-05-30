@@ -190,6 +190,46 @@ func (g *GitRegistry) Index(ctx context.Context) (Index, error) {
 	return readIndex(filepath.Join(g.LocalPath, "index.json"))
 }
 
+// Sync ensures LocalPath holds a working tree of the remote at the tracked
+// branch, WITHOUT requiring an index.json. Callers that read repo content
+// directly from the working tree (e.g. the portal reading hub/registry.yaml +
+// the four primitive directories) use this to populate the checkout before
+// reading it.
+//
+// Unlike ensureClone (which assumes any pre-existing directory is already a
+// clone), Sync detects an empty/non-repo directory — the common case for a
+// freshly-mounted emptyDir volume — and clones into it.
+func (g *GitRegistry) Sync(ctx context.Context) error {
+	if g.LocalPath == "" {
+		return fmt.Errorf("GitRegistry: LocalPath is empty")
+	}
+	// Already a git repo → just refresh to the branch tip.
+	if _, err := gogit.PlainOpen(g.LocalPath); err == nil {
+		g.refresh(ctx)
+		return nil
+	}
+	// Not a repo yet (missing or empty mount). Clone into it.
+	if g.RemoteURL == "" {
+		return RegistryUnreachable{Detail: fmt.Sprintf("no git repo at %s and no remote configured", g.LocalPath)}
+	}
+	g.log("cloning %s into %s", g.RemoteURL, g.LocalPath)
+	_, err := gogit.PlainCloneContext(ctx, g.LocalPath, false, &gogit.CloneOptions{
+		URL:           g.RemoteURL,
+		ReferenceName: g.branchRef(),
+		SingleBranch:  true,
+	})
+	if err != nil {
+		if isAuthError(err) && systemGitAvailable() {
+			g.log("go-git clone failed with auth error; falling back to system git")
+			if errFb := systemGitClone(ctx, g.RemoteURL, g.LocalPath, g.branchName()); errFb == nil {
+				return nil
+			}
+		}
+		return RegistryUnreachable{Detail: fmt.Sprintf("clone failed: %v", err)}
+	}
+	return nil
+}
+
 // Manifest implements Registry.Manifest.
 func (g *GitRegistry) Manifest(ctx context.Context, namespace, name string) (Manifest, error) {
 	if err := g.ensureClone(ctx); err != nil {
