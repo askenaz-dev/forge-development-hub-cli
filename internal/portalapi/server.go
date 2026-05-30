@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -21,9 +20,8 @@ import (
 // All read endpoints serve from an in-memory snapshot maintained by a
 // background refresh loop.
 type Server struct {
-	cfg      Config
-	build    BuildInfo
-	registry registry.Registry
+	cfg   Config
+	build BuildInfo
 
 	snapshot atomic.Pointer[snapshot]
 	mu       sync.Mutex
@@ -37,7 +35,7 @@ type Server struct {
 
 type snapshot struct {
 	index       registry.Index
-	indexByKey  map[string]registry.IndexEntry // "ns/name" → entry
+	indexByKey  map[string]registry.IndexEntry // "kind/ns/name" → entry
 	refreshedAt time.Time
 }
 
@@ -45,8 +43,6 @@ type snapshot struct {
 // that happens asynchronously in RunRefreshLoop so the HTTP server can
 // start serving /healthz immediately.
 func New(cfg Config, build BuildInfo) (*Server, error) {
-	reg := buildRegistry(cfg)
-
 	var validator *auth.Validator
 	if cfg.AuthEnabled() {
 		rm, err := auth.LoadRoleMap(cfg.OIDCRoleMapPath)
@@ -63,7 +59,6 @@ func New(cfg Config, build BuildInfo) (*Server, error) {
 	return &Server{
 		cfg:        cfg,
 		build:      build,
-		registry:   reg,
 		logger:     slog.Default(),
 		metrics:    newMetrics(),
 		validator:  validator,
@@ -71,20 +66,49 @@ func New(cfg Config, build BuildInfo) (*Server, error) {
 	}, nil
 }
 
-func buildRegistry(cfg Config) registry.Registry {
-	localPath := cfg.RegistryLocalPath
-	if localPath == "" {
-		// Derive a clone path from the URL for cache locality.
-		localPath = filepath.Join(os.TempDir(), "fdh-portal-registry-cache")
+// buildHubIndex builds the in-memory catalog snapshot from the real hub
+// content at hubPath (hub/registry.yaml + the four primitive directories),
+// reusing the same producer machinery (loadHubCatalog + componentVersions)
+// as the wire endpoints. Components of every kind are included; Skills is the
+// kind=="skill" projection so the /api/v1/skills endpoint stays skill-scoped.
+// namespace is derived from each component's owner_team per the
+// hub-http-registry canonical rule (deriveNamespace).
+func buildHubIndex(hubPath string) (registry.Index, error) {
+	cat, err := loadHubCatalog(hubPath)
+	if err != nil {
+		return registry.Index{}, err
 	}
-	return &registry.GitRegistry{
-		LocalPath: localPath,
-		RemoteURL: cfg.RegistryURL,
-		Branch:    cfg.RegistryBranch,
-		Logger: func(line string) {
-			slog.Default().Info("registry", "msg", line)
-		},
+	idx := registry.Index{SchemaVersion: 2, Registry: "forge-development-hub"}
+	for _, comp := range cat.Components {
+		switch comp.Kind {
+		case "skill", "rule", "agent", "hook":
+		default:
+			continue
+		}
+		srcDir := filepath.Join(hubPath, filepath.FromSlash(comp.Path))
+		vers, err := componentVersions(hubPath, srcDir, comp.Path, comp.Kind, comp.Name)
+		if err != nil || len(vers) == 0 {
+			continue
+		}
+		latest := vers[0]
+		idx.Components = append(idx.Components, registry.IndexEntry{
+			Kind:          comp.Kind,
+			Namespace:     deriveNamespace(comp.OwnerTeam),
+			Name:          comp.Name,
+			Description:   comp.Description,
+			OwnerTeam:     comp.OwnerTeam,
+			Tags:          comp.Tags,
+			LatestVersion: latest.Version,
+			LatestHash:    latest.ContentHash,
+			ScanStatus:    wireScanStatus,
+		})
 	}
+	for _, e := range idx.Components {
+		if e.Kind == "skill" {
+			idx.Skills = append(idx.Skills, e)
+		}
+	}
+	return idx, nil
 }
 
 // Handler returns the configured http.Handler with all routes registered.
@@ -104,6 +128,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/skills/{namespace}/{name}", s.handleGetSkill)
 	mux.HandleFunc("GET /api/v1/skills/{namespace}/{name}/versions/{version}", s.handleGetVersion)
 	mux.HandleFunc("GET /api/v1/skills/{namespace}/{name}/versions/{version}/skill-md", s.handleGetSkillMD)
+
+	// Kind-aware component catalog (skills are the kind=skill view above).
+	mux.HandleFunc("GET /api/v1/components", s.handleListComponents)
+	mux.HandleFunc("GET /api/v1/components/{kind}/{namespace}/{name}", s.handleGetComponent)
+	mux.HandleFunc("GET /api/v1/components/{kind}/{namespace}/{name}/versions/{version}", s.handleGetComponentVersion)
+	mux.HandleFunc("GET /api/v1/components/{kind}/{namespace}/{name}/versions/{version}/document", s.handleGetComponentDocument)
 	mux.HandleFunc("GET /api/v1/auth/me", s.handleAuthMe)
 	mux.HandleFunc("POST /api/v1/refresh", s.handleRefresh)
 	mux.HandleFunc("POST /api/v1/activation", s.handlePostActivation)
@@ -152,20 +182,20 @@ func (s *Server) Refresh(ctx context.Context) error {
 	defer s.mu.Unlock()
 
 	start := time.Now()
-	idx, err := s.registry.Index(ctx)
+	idx, err := buildHubIndex(s.cfg.HubPath)
 	if err != nil {
 		if s.metrics != nil {
 			s.metrics.refreshTotal.WithLabelValues("error").Inc()
 		}
-		return fmt.Errorf("registry index: %w", err)
+		return fmt.Errorf("build hub index: %w", err)
 	}
 	snap := &snapshot{
 		index:       idx,
-		indexByKey:  make(map[string]registry.IndexEntry, len(idx.Skills)),
+		indexByKey:  make(map[string]registry.IndexEntry, len(idx.Components)),
 		refreshedAt: time.Now().UTC(),
 	}
-	for _, e := range idx.Skills {
-		key := e.Namespace + "/" + e.Name
+	for _, e := range idx.Components {
+		key := e.Kind + "/" + e.Namespace + "/" + e.Name
 		snap.indexByKey[key] = e
 	}
 	s.snapshot.Store(snap)
@@ -173,9 +203,10 @@ func (s *Server) Refresh(ctx context.Context) error {
 	if s.metrics != nil {
 		s.metrics.refreshTotal.WithLabelValues("ok").Inc()
 		s.metrics.refreshDuration.Observe(time.Since(start).Seconds())
-		s.metrics.registryCacheSize.Set(float64(len(idx.Skills)))
+		s.metrics.registryCacheSize.Set(float64(len(idx.Components)))
 	}
-	s.logger.Info("registry refreshed",
+	s.logger.Info("catalog refreshed",
+		"component_count", len(idx.Components),
 		"skill_count", len(idx.Skills),
 		"refreshed_at", snap.refreshedAt.Format(time.RFC3339))
 	return nil

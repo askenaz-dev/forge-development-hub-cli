@@ -131,6 +131,98 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  # --- Component catalog (kind-aware; skills are the kind=skill view) --------
+  /components:
+    get:
+      operationId: listComponents
+      summary: List components across all four kinds
+      parameters:
+        - in: query
+          name: kind
+          schema: { type: string, enum: [skill, rule, agent, hook] }
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: namespace
+          schema: { type: string }
+        - in: query
+          name: tag
+          schema: { type: string }
+        - in: query
+          name: scan_status
+          schema: { type: string, enum: [pass, warn, fail, none] }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        "200":
+          description: Page of component summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComponentsPage"
+        "400":
+          $ref: "#/components/responses/NotFound"
+
+  /components/{kind}/{namespace}/{name}:
+    get:
+      operationId: getComponent
+      summary: Full manifest for one component
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+      responses:
+        "200":
+          description: Component manifest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComponentManifest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /components/{kind}/{namespace}/{name}/versions/{version}:
+    get:
+      operationId: getComponentVersion
+      summary: Metadata for one published component version
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+        - $ref: "#/components/parameters/Version"
+      responses:
+        "200":
+          description: Version metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComponentVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /components/{kind}/{namespace}/{name}/versions/{version}/document:
+    get:
+      operationId: getComponentDocument
+      summary: Raw entrypoint markdown (SKILL.md/RULE.md/AGENT.md/HOOK.md) of one version
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+        - $ref: "#/components/parameters/Version"
+      responses:
+        "200":
+          description: Entrypoint markdown body
+          content:
+            text/markdown:
+              schema: { type: string }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # --- Wire-protocol endpoints ----------------------------------------------
   # The contract for these endpoints lives in the `hub-http-registry`
   # specification in forge-development-hub. Each path uses a per-path
@@ -276,6 +368,14 @@ components:
       schema:
         type: string
         enum: [skills, rules, agents, hooks]
+    Kind:
+      in: path
+      name: kind
+      required: true
+      description: Singular component kind.
+      schema:
+        type: string
+        enum: [skill, rule, agent, hook]
 
   responses:
     NotFound:
@@ -358,6 +458,61 @@ components:
         signature: { type: string }
         skill_md_url: { type: string, format: uri }
 
+    ComponentsPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ComponentSummary" }
+        next_cursor:
+          type: [string, "null"]
+
+    ComponentSummary:
+      type: object
+      required: [kind, namespace, name, latest_version, latest_hash, scan_status]
+      properties:
+        kind: { type: string, enum: [skill, rule, agent, hook] }
+        namespace: { type: string }
+        name: { type: string }
+        description: { type: string }
+        owner_team: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        latest_version: { type: string }
+        latest_hash: { type: string }
+        scan_status: { type: string, enum: [pass, warn, fail, none] }
+
+    ComponentManifest:
+      type: object
+      required: [kind, namespace, name, latest, versions]
+      properties:
+        kind: { type: string, enum: [skill, rule, agent, hook] }
+        namespace: { type: string }
+        name: { type: string }
+        description: { type: string }
+        owner_team: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        latest: { type: string }
+        versions:
+          type: array
+          items: { $ref: "#/components/schemas/ComponentVersion" }
+
+    ComponentVersion:
+      type: object
+      required: [version, content_hash, published_at, scan_status]
+      properties:
+        version: { type: string }
+        content_hash: { type: string }
+        published_at: { type: string, format: date-time }
+        published_by: { type: string }
+        scan_status: { type: string, enum: [pass, warn, fail, none] }
+        signature: { type: string }
+        document_url: { type: string, format: uri }
+
     UserIdentity:
       type: object
       required: [role]
@@ -389,18 +544,19 @@ components:
     # --- Wire-protocol schemas ---
     WireIndex:
       type: object
-      required: [schema_version, registry, skills]
+      required: [schema_version, registry, components]
       properties:
-        schema_version: { type: integer, enum: [1] }
+        schema_version: { type: integer, enum: [2] }
         registry: { type: string }
-        skills:
+        components:
           type: array
           items: { $ref: "#/components/schemas/WireIndexEntry" }
 
     WireIndexEntry:
       type: object
-      required: [namespace, name, description, owner_team, latest_version, latest_hash, scan_status]
+      required: [kind, namespace, name, description, owner_team, latest_version, latest_hash, scan_status]
       properties:
+        kind: { type: string, enum: [skill, rule, agent, hook] }
         namespace: { type: string, enum: [forge] }
         name: { type: string }
         description: { type: string }

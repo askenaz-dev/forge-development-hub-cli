@@ -1,13 +1,13 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/forge/fdh/pkg/hubregistry"
 )
@@ -59,30 +59,36 @@ func runValidateRegistry(cmd *cobra.Command, args []string, _ BuildInfo) error {
 		return Errorf(ExitInvalidUsage, "repo root %s is not a directory", absRoot)
 	}
 
-	registryPath := filepath.Join(absRoot, "skills", "registry.yaml")
-	raw, err := os.ReadFile(registryPath)
-	if err != nil {
-		return Errorf(ExitInvalidUsage, "read %s: %v", registryPath, err)
+	// Prefer v2 path, fall back to v1 legacy mirror.
+	registryPath, registryRel, raw, readErr := readRegistry(absRoot)
+	if readErr != nil {
+		return Errorf(ExitInvalidUsage, "read registry: %v", readErr)
 	}
-	reg, err := decodeRegistryFromBytes(raw)
+	reg, err := hubregistry.Parse(raw, nil)
 	if err != nil {
 		// A parse error is itself a validation finding so the JSON
 		// output stays uniform across success/failure cases.
+		rule := "yaml-syntax"
+		var schemaErr *hubregistry.UnsupportedSchemaError
+		if errors.As(err, &schemaErr) {
+			rule = "schema-version"
+		}
 		result := ValidateRegistryResult{
 			OK:       false,
 			RepoRoot: absRoot,
 			Errors: []hubregistry.ValidationError{{
-				Rule:     "yaml-syntax",
+				Rule:     rule,
 				Message:  err.Error(),
-				Location: "skills/registry.yaml",
+				Location: registryRel,
 			}},
 		}
-		emit := emitValidateResult(cmd.OutOrStdout(), cmd.ErrOrStderr(), result, outputMode(cmd))
+		emit := emitValidateResult(cmd.OutOrStdout(), cmd.ErrOrStderr(), result, outputMode(cmd), registryRel)
 		if emit != nil {
 			return Wrap(ExitGenericFailure, emit)
 		}
 		return Errorf(ExitValidation, "registry.yaml failed validation")
 	}
+	_ = registryPath
 
 	res := hubregistry.Validate(reg, absRoot)
 	result := ValidateRegistryResult{
@@ -90,7 +96,7 @@ func runValidateRegistry(cmd *cobra.Command, args []string, _ BuildInfo) error {
 		RepoRoot: absRoot,
 		Errors:   res.Errors,
 	}
-	if err := emitValidateResult(cmd.OutOrStdout(), cmd.ErrOrStderr(), result, outputMode(cmd)); err != nil {
+	if err := emitValidateResult(cmd.OutOrStdout(), cmd.ErrOrStderr(), result, outputMode(cmd), registryRel); err != nil {
 		return Wrap(ExitGenericFailure, err)
 	}
 	if !res.OK {
@@ -99,26 +105,33 @@ func runValidateRegistry(cmd *cobra.Command, args []string, _ BuildInfo) error {
 	return nil
 }
 
-// decodeRegistryFromBytes parses YAML bytes into a hubregistry.Registry.
-// Kept as a small helper so the CLI doesn't import yaml directly from
-// other places.
-func decodeRegistryFromBytes(raw []byte) (*hubregistry.Registry, error) {
-	var r hubregistry.Registry
-	if err := yaml.Unmarshal(raw, &r); err != nil {
-		return nil, fmt.Errorf("parse registry.yaml: %w", err)
+// readRegistry finds the catalog under absRoot, preferring v2
+// (hub/registry.yaml) and falling back to the legacy v1 mirror
+// (skills/registry.yaml). Returns absolute path, hub-relative display
+// path, the bytes, and an error.
+func readRegistry(absRoot string) (abs, rel string, raw []byte, err error) {
+	candidates := []string{
+		filepath.Join("hub", "registry.yaml"),
+		filepath.Join("skills", "registry.yaml"),
 	}
-	return &r, nil
+	for _, c := range candidates {
+		p := filepath.Join(absRoot, c)
+		if b, e := os.ReadFile(p); e == nil {
+			return p, filepath.ToSlash(c), b, nil
+		}
+	}
+	return "", "", nil, fmt.Errorf("no registry.yaml found under %s (tried hub/registry.yaml and skills/registry.yaml)", absRoot)
 }
 
-func emitValidateResult(stdout, stderr io.Writer, r ValidateRegistryResult, mode string) error {
+func emitValidateResult(stdout, stderr io.Writer, r ValidateRegistryResult, mode, rel string) error {
 	if mode == "json" {
 		return emitJSON(stdout, r)
 	}
 	if r.OK {
-		fmt.Fprintf(stdout, "ok: %s (%s)\n", filepath.Join("skills", "registry.yaml"), r.RepoRoot)
+		fmt.Fprintf(stdout, "ok: %s (%s)\n", rel, r.RepoRoot)
 		return nil
 	}
-	fmt.Fprintf(stdout, "FAILED: %s (%s)\n\n", filepath.Join("skills", "registry.yaml"), r.RepoRoot)
+	fmt.Fprintf(stdout, "FAILED: %s (%s)\n\n", rel, r.RepoRoot)
 	for _, e := range r.Errors {
 		fmt.Fprintf(stdout, "  [%s] %s\n        at %s\n", e.Rule, e.Message, e.Location)
 	}

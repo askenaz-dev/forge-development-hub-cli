@@ -2,7 +2,10 @@ package adapters
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+
+	"github.com/forge/fdh/pkg/managed"
 )
 
 // ClaudeCodeAdapter installs a skill as a directory copy under the
@@ -87,7 +90,17 @@ func directoryInstall(agent, srcDir string, opts InstallOpts, tp targetPathFn) (
 	if err != nil {
 		return InstallResult{}, fmt.Errorf("hash source: %w", err)
 	}
-	markerPath := filepath.Join(target, MarkerName(agent, opts.SkillName))
+
+	// Migrate legacy `.skill-version` if it exists at target before
+	// the read-existing check so subsequent runs see the new marker.
+	legacyPath := filepath.Join(target, ".skill-version")
+	if _, statErr := os.Stat(legacyPath); statErr == nil {
+		if _, _, mErr := managed.Migrate(legacyPath); mErr != nil {
+			return InstallResult{}, fmt.Errorf("migrate legacy marker: %w", mErr)
+		}
+	}
+
+	markerPath := filepath.Join(target, managed.Filename)
 
 	result := InstallResult{
 		Agent:       agent,
@@ -97,7 +110,7 @@ func directoryInstall(agent, srcDir string, opts InstallOpts, tp targetPathFn) (
 		ContentHash: hash,
 	}
 
-	if existing, err := LoadMarker(markerPath); err == nil && existing.ContentHash == hash && !opts.Overwrite {
+	if existing, err := managed.Read(markerPath); err == nil && existing.ContentHash == hash && !opts.Overwrite {
 		result.Skipped = true
 		return result, nil
 	}
@@ -108,20 +121,18 @@ func directoryInstall(agent, srcDir string, opts InstallOpts, tp targetPathFn) (
 	}
 	result.FilesWritten = written
 
-	marker := SkillVersionMarker{
+	marker := managed.Marker{
 		Name:           opts.SkillName,
-		HubVersion:     opts.HubVersion,
+		Kind:           managed.KindSkill,
+		Version:        opts.HubVersion,
 		HubCommit:      opts.HubCommit,
 		InstalledByFDH: opts.InstalledByFDH,
+		SourcePath:     "skills/" + opts.SkillName,
 		ContentHash:    hash,
 		Agent:          agent,
 	}
-	body, err := MarshalMarker(marker)
-	if err != nil {
-		return result, err
-	}
 	if !opts.DryRun {
-		if err := writeFileAtomic(markerPath, body, 0o644); err != nil {
+		if _, err := managed.Write(target, "", marker, false); err != nil {
 			return result, fmt.Errorf("write marker: %w", err)
 		}
 	}

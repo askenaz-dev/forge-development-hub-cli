@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/forge/fdh/pkg/adapters"
+	"github.com/forge/fdh/pkg/managed"
 )
 
 // InstalledSkill is one skill+agent marker found on disk by
@@ -105,7 +106,15 @@ func scanDirectoryRoot(a adapters.SkillAdapter, root string) ([]InstalledSkill, 
 			continue
 		}
 		installDir := filepath.Join(root, e.Name())
-		markerPath := filepath.Join(installDir, ".skill-version")
+		// Prefer canonical `.fdh-managed.yaml`; fall back to legacy.
+		markerPath := filepath.Join(installDir, managed.Filename)
+		if _, statErr := os.Stat(markerPath); statErr != nil {
+			legacy := filepath.Join(installDir, ".skill-version")
+			if _, lErr := os.Stat(legacy); lErr != nil {
+				continue // no marker
+			}
+			markerPath = legacy
+		}
 		marker, err := adapters.LoadMarker(markerPath)
 		if err != nil {
 			continue // not our skill
@@ -137,7 +146,9 @@ func scanFlatRoot(a adapters.SkillAdapter, root string) ([]InstalledSkill, error
 			continue
 		}
 		name := e.Name()
-		if !strings.HasPrefix(name, ".skill-version-") {
+		isCanonical := managed.IsManagedFilename(name) && name != managed.Filename
+		isLegacy := strings.HasPrefix(name, ".skill-version-") && name != ".skill-version-"
+		if !isCanonical && !isLegacy {
 			continue
 		}
 		markerPath := filepath.Join(root, name)

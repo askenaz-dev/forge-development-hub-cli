@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/forge/fdh/pkg/bundle"
 	"github.com/forge/fdh/pkg/registry"
 )
 
@@ -101,30 +100,28 @@ func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGetSkill returns the full manifest for one skill.
+// handleGetSkill returns the full manifest for one skill, assembled from the
+// real hub catalog. Skills are served under the "forge" namespace sentinel.
 func (s *Server) handleGetSkill(w http.ResponseWriter, r *http.Request) {
 	ns := r.PathValue("namespace")
 	name := r.PathValue("name")
-
-	man, err := s.registry.Manifest(r.Context(), ns, name)
-	if err != nil {
+	comp, vers, ok := s.hubComponentVersions("skill", name)
+	if !ok || deriveNamespace(comp.OwnerTeam) != ns {
 		s.notFoundFor(w, "skill_not_found", ns, name, "")
 		return
 	}
-
-	skillMDBase := strings.TrimRight(s.publicBaseURL(r), "/") + "/api/v1/skills/" + ns + "/" + name
-	versions := make([]map[string]any, 0, len(man.Versions))
-	for _, v := range man.Versions {
-		versions = append(versions, versionToJSON(skillMDBase, v))
+	base := strings.TrimRight(s.publicBaseURL(r), "/") + "/api/v1/skills/" + ns + "/" + name
+	versions := make([]map[string]any, 0, len(vers))
+	for _, v := range vers {
+		versions = append(versions, hubVersionToJSON(base, v))
 	}
-
 	s.writeJSON(w, http.StatusOK, map[string]any{
-		"namespace":   man.Namespace,
-		"name":        man.Name,
-		"description": man.Description,
-		"owner_team":  man.OwnerTeam,
-		"tags":        man.Tags,
-		"latest":      man.Latest,
+		"namespace":   ns,
+		"name":        comp.Name,
+		"description": comp.Description,
+		"owner_team":  comp.OwnerTeam,
+		"tags":        comp.Tags,
+		"latest":      vers[0].Version,
 		"versions":    versions,
 	})
 }
@@ -134,52 +131,90 @@ func (s *Server) handleGetVersion(w http.ResponseWriter, r *http.Request) {
 	ns := r.PathValue("namespace")
 	name := r.PathValue("name")
 	version := r.PathValue("version")
-
-	man, err := s.registry.Manifest(r.Context(), ns, name)
-	if err != nil {
+	comp, vers, ok := s.hubComponentVersions("skill", name)
+	if !ok || deriveNamespace(comp.OwnerTeam) != ns {
 		s.notFoundFor(w, "skill_not_found", ns, name, version)
 		return
 	}
-	v := man.FindVersion(version)
-	if v == nil {
-		s.notFoundFor(w, "version_not_found", ns, name, version)
-		return
+	base := strings.TrimRight(s.publicBaseURL(r), "/") + "/api/v1/skills/" + ns + "/" + name
+	for _, v := range vers {
+		if v.Version == version {
+			s.writeJSON(w, http.StatusOK, hubVersionToJSON(base, v))
+			return
+		}
 	}
-	skillMDBase := strings.TrimRight(s.publicBaseURL(r), "/") + "/api/v1/skills/" + ns + "/" + name
-	s.writeJSON(w, http.StatusOK, versionToJSON(skillMDBase, *v))
+	s.notFoundFor(w, "version_not_found", ns, name, version)
 }
 
-// handleGetSkillMD serves the raw SKILL.md bytes from the bundle.
+// handleGetSkillMD serves the raw SKILL.md bytes for a version from the hub
+// working tree (or the historical tree for an older tagged version).
 func (s *Server) handleGetSkillMD(w http.ResponseWriter, r *http.Request) {
 	ns := r.PathValue("namespace")
 	name := r.PathValue("name")
 	version := r.PathValue("version")
-
-	bp, err := s.registry.FetchBundle(r.Context(), ns, name, version)
+	cat, err := loadHubCatalog(s.cfg.HubPath)
 	if err != nil {
 		s.notFoundFor(w, "bundle_not_found", ns, name, version)
 		return
 	}
-	defer func() { _ = bp.Cleanup() }()
-
-	b, err := bundle.Load(bp.Path)
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, "bundle_load_failed", err.Error())
+	comp := cat.findComponent("skill", name)
+	if comp == nil || deriveNamespace(comp.OwnerTeam) != ns {
+		s.notFoundFor(w, "bundle_not_found", ns, name, version)
 		return
 	}
+	srcDir := filepath.Join(s.cfg.HubPath, filepath.FromSlash(comp.Path))
+	dir, cleanup, _, found, err := resolveVersionSource(s.cfg.HubPath, srcDir, comp.Path, comp.Kind, comp.Name, version)
+	if err != nil || !found {
+		s.notFoundFor(w, "version_not_found", ns, name, version)
+		return
+	}
+	defer cleanup()
 
-	// Read the raw SKILL.md from disk.
-	skillPath := filepath.Join(b.Root, "SKILL.md")
-	body, err := readFile(skillPath)
+	body, err := readFile(filepath.Join(dir, entrypointFile("skill")))
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "skill_md_unreadable", err.Error())
 		return
 	}
-
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=60")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
+}
+
+// hubComponentVersions resolves a component of the given kind from the real
+// hub catalog plus its published versions (newest first). ok is false when
+// the component or its versions cannot be resolved.
+func (s *Server) hubComponentVersions(kind, name string) (*hubComponent, []resolvedVersion, bool) {
+	cat, err := loadHubCatalog(s.cfg.HubPath)
+	if err != nil {
+		return nil, nil, false
+	}
+	comp := cat.findComponent(kind, name)
+	if comp == nil {
+		return nil, nil, false
+	}
+	srcDir := filepath.Join(s.cfg.HubPath, filepath.FromSlash(comp.Path))
+	vers, err := componentVersions(s.cfg.HubPath, srcDir, comp.Path, comp.Kind, comp.Name)
+	if err != nil || len(vers) == 0 {
+		return nil, nil, false
+	}
+	return comp, vers, true
+}
+
+// hubVersionToJSON renders a resolvedVersion as the /api/v1 version JSON shape.
+func hubVersionToJSON(base string, v resolvedVersion) map[string]any {
+	out := map[string]any{
+		"version":      v.Version,
+		"content_hash": v.ContentHash,
+		"published_at": v.PublishedAt.UTC().Format(time.RFC3339),
+		"published_by": wirePublishedBy,
+		"scan_status":  wireScanStatus,
+		"skill_md_url": base + "/versions/" + v.Version + "/skill-md",
+	}
+	if v.Signature != "" {
+		out["signature"] = v.Signature
+	}
+	return out
 }
 
 // handleAuthMe is the identity endpoint. Without OIDC configured, every
@@ -213,8 +248,9 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	snap := s.Snapshot()
 	s.writeJSON(w, http.StatusOK, map[string]any{
-		"refreshed_at": snap.refreshedAt.Format(time.RFC3339),
-		"skill_count":  len(snap.index.Skills),
+		"refreshed_at":    snap.refreshedAt.Format(time.RFC3339),
+		"component_count": len(snap.index.Components),
+		"skill_count":     len(snap.index.Skills),
 	})
 }
 
@@ -266,24 +302,6 @@ func indexEntryToSummary(e registry.IndexEntry) map[string]any {
 		"latest_hash":    e.LatestHash,
 		"scan_status":    e.ScanStatus,
 	}
-}
-
-func versionToJSON(skillMDBase string, v registry.Version) map[string]any {
-	out := map[string]any{
-		"version":      v.Version,
-		"content_hash": v.ContentHash,
-		"published_at": v.PublishedAt,
-		"published_by": v.PublishedBy,
-		"scan_status":  v.ScanStatus,
-		"skill_md_url": skillMDBase + "/versions/" + v.Version + "/skill-md",
-	}
-	if v.ChangelogURL != "" {
-		out["changelog_url"] = v.ChangelogURL
-	}
-	if v.Signature != "" {
-		out["signature"] = v.Signature
-	}
-	return out
 }
 
 func containsString(haystack []string, needle string) bool {

@@ -71,9 +71,9 @@ func LoadConfig() (Config, error) {
 		HubPath:           envOr("FDH_PORTAL_HUB_PATH", "/srv/hub"),
 	}
 
-	if cfg.RegistryLocalPath == "" && cfg.RegistryURL == "" {
-		return cfg, fmt.Errorf("at least one of FDH_PORTAL_REGISTRY_LOCAL_PATH or FDH_PORTAL_REGISTRY_URL must be set")
-	}
+	// The portal serves its catalog from the hub content at HubPath. The
+	// legacy RegistryLocalPath/RegistryURL fields are optional (kept for the
+	// CLI consumer and diagnostics) and no longer gate startup.
 
 	intervalStr := envOr("FDH_PORTAL_REFRESH_INTERVAL", "60s")
 	dur, err := time.ParseDuration(intervalStr)

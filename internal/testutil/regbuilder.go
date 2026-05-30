@@ -210,3 +210,110 @@ func FixtureSKILLMD(name, description string) string {
 	sb.WriteString(description + "\n")
 	return sb.String()
 }
+
+// HubComponentSpec describes a component to publish into a hub-content fixture
+// (the layout the portal serves from FDH_PORTAL_HUB_PATH), as opposed to the
+// built-registry layout produced by BuildRegistry.
+type HubComponentSpec struct {
+	Kind        string // skill | rule | agent | hook
+	Name        string
+	Version     string // written into the entrypoint frontmatter (version:)
+	Description string
+	OwnerTeam   string
+	Tags        []string
+	// Files holds extra bundle-relative files. The kind's entrypoint
+	// (SKILL.md/RULE.md/AGENT.md/HOOK.md) is generated automatically unless
+	// supplied here.
+	Files map[string]string
+}
+
+// BuildHubFixture writes a hub content tree under root that the portal serves
+// when FDH_PORTAL_HUB_PATH points at root:
+//
+//	root/hub/registry.yaml             (schema_version 2, components[])
+//	root/<plural>/<name>/<ENTRYPOINT>  (frontmatter incl. version)
+//
+// root is not a git repo, so each component publishes exactly its declared
+// frontmatter version (the producer's no-tags fallback). Re-calling with a
+// different spec set overwrites registry.yaml, so tests can simulate updates.
+func BuildHubFixture(t *testing.T, root string, comps []HubComponentSpec) {
+	t.Helper()
+
+	var b strings.Builder
+	b.WriteString("schema_version: 2\n")
+	b.WriteString("hub_version: \"test\"\n")
+	b.WriteString("components:\n")
+	for _, c := range comps {
+		path := hubKindPlural(c.Kind) + "/" + c.Name
+		b.WriteString("  - name: " + c.Name + "\n")
+		b.WriteString("    kind: " + c.Kind + "\n")
+		b.WriteString("    description: " + strconvQuote(c.Description) + "\n")
+		b.WriteString("    owner_team: " + c.OwnerTeam + "\n")
+		if len(c.Tags) > 0 {
+			b.WriteString("    tags: [" + strings.Join(c.Tags, ", ") + "]\n")
+		}
+		b.WriteString("    path: " + path + "\n")
+
+		dir := filepath.Join(root, filepath.FromSlash(path))
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		ep := hubEntrypointName(c.Kind)
+		if c.Files == nil || c.Files[ep] == "" {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, ep),
+				[]byte(hubEntrypointBody(c.Name, c.Description, c.Version)), 0o644))
+		}
+		for rel, content := range c.Files {
+			p := filepath.Join(dir, filepath.FromSlash(rel))
+			require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
+			require.NoError(t, os.WriteFile(p, []byte(content), 0o644))
+		}
+	}
+
+	hubDir := filepath.Join(root, "hub")
+	require.NoError(t, os.MkdirAll(hubDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(hubDir, "registry.yaml"), []byte(b.String()), 0o644))
+}
+
+func hubKindPlural(kind string) string {
+	switch kind {
+	case "skill":
+		return "skills"
+	case "rule":
+		return "rules"
+	case "agent":
+		return "agents"
+	case "hook":
+		return "hooks"
+	default:
+		return kind + "s"
+	}
+}
+
+func hubEntrypointName(kind string) string {
+	switch kind {
+	case "rule":
+		return "RULE.md"
+	case "agent":
+		return "AGENT.md"
+	case "hook":
+		return "HOOK.md"
+	default:
+		return "SKILL.md"
+	}
+}
+
+func hubEntrypointBody(name, desc, version string) string {
+	var sb strings.Builder
+	sb.WriteString("---\n")
+	sb.WriteString("name: " + name + "\n")
+	sb.WriteString("description: " + desc + "\n")
+	if version != "" {
+		sb.WriteString("version: " + version + "\n")
+	}
+	sb.WriteString("---\n\n# " + name + "\n\n" + desc + "\n")
+	return sb.String()
+}
+
+// strconvQuote double-quotes a YAML scalar, escaping embedded quotes.
+func strconvQuote(s string) string {
+	return "\"" + strings.ReplaceAll(s, "\"", "\\\"") + "\""
+}

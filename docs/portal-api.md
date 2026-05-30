@@ -58,10 +58,10 @@ protocol gains a real second segment without breaking these URLs.
 | Env var                              | Default     | Purpose                                                                            |
 | ------------------------------------ | ----------- | ---------------------------------------------------------------------------------- |
 | `FDH_PORTAL_API_ADDR`                | `:8080`     | Listen address.                                                                    |
-| `FDH_PORTAL_HUB_PATH`                | `/srv/hub`  | **Wire protocol source.** Filesystem path where the hub repo is mounted.           |
-| `FDH_PORTAL_REGISTRY_LOCAL_PATH`     | —           | UI source. Local clone of the registry (set this OR `FDH_PORTAL_REGISTRY_URL`).    |
-| `FDH_PORTAL_REGISTRY_URL`            | —           | UI source. Remote URL the GitRegistry tracks.                                      |
-| `FDH_PORTAL_REGISTRY_BRANCH`         | `main`      | UI source. Branch GitRegistry tracks.                                              |
+| `FDH_PORTAL_HUB_PATH`                | `/srv/hub`  | **Catalog source for BOTH trees.** Filesystem path where the hub repo is mounted.  |
+| `FDH_PORTAL_REGISTRY_LOCAL_PATH`     | —           | Legacy/optional. No longer used by the portal's serving path; kept for the CLI consumer + diagnostics. |
+| `FDH_PORTAL_REGISTRY_URL`            | —           | Legacy/optional. No longer used by the portal's serving path.                      |
+| `FDH_PORTAL_REGISTRY_BRANCH`         | `main`      | Legacy/optional. No longer used by the portal's serving path.                      |
 | `FDH_PORTAL_REFRESH_INTERVAL`        | `60s`       | UI snapshot refresh interval. Wire endpoints read the filesystem on every request. |
 | `OIDC_DISCOVERY_URL`                 | —           | OIDC discovery endpoint. Empty disables auth (dev only).                           |
 | `OIDC_CLIENT_ID`                     | —           | Expected audience claim.                                                           |
@@ -69,8 +69,11 @@ protocol gains a real second segment without breaking these URLs.
 | `OTEL_EXPORTER_OTLP_ENDPOINT`        | —           | OTel collector endpoint.                                                           |
 
 The wire endpoints read directly from `FDH_PORTAL_HUB_PATH` on every
-request — no snapshot, no refresh loop. The UI endpoints use the
-existing snapshot refreshed by `FDH_PORTAL_REGISTRY_*`.
+request — no snapshot, no refresh loop. The UI endpoints serve an
+in-memory snapshot built from the **same** `FDH_PORTAL_HUB_PATH` catalog,
+refreshed every `FDH_PORTAL_REFRESH_INTERVAL`. (Earlier builds backed the
+UI with a separate `FDH_PORTAL_REGISTRY_*` GitRegistry clone; both trees
+now share the one hub source.)
 
 ## Deploy with git-sync
 
@@ -89,12 +92,13 @@ Point `FDH_PORTAL_HUB_PATH` at your local clone of
 
 ```sh
 FDH_PORTAL_HUB_PATH=/path/to/forge-development-hub \
-FDH_PORTAL_REGISTRY_LOCAL_PATH=/path/to/forge-development-hub \
   go run ./cmd/fdh-portal-api/
-curl http://localhost:8080/v1/index.json
+curl http://localhost:8080/v1/index.json                 # v2 components[], all four kinds
+curl http://localhost:8080/api/v1/skills                 # human catalog (skills view)
 curl http://localhost:8080/v1/skills/forge/design-system/manifest.json
-curl -o bundle.tar.gz http://localhost:8080/v1/skills/forge/design-system/versions/latest/bundle.tar.gz
-curl http://localhost:8080/v1/skills/forge/design-system/versions/latest/bundle.sha256
+# Use a real version from the manifest (e.g. 0.1.0), not the literal "latest":
+curl -o bundle.tar.gz http://localhost:8080/v1/skills/forge/design-system/versions/0.1.0/bundle.tar.gz
+curl http://localhost:8080/v1/skills/forge/design-system/versions/0.1.0/bundle.sha256
 ```
 
 Two requests against the same `bundle.tar.gz` URL produce byte-identical

@@ -44,6 +44,20 @@ func TestOpenAPISpec_HasWireEndpoints(t *testing.T) {
 	}
 }
 
+func TestOpenAPISpec_HasComponentEndpoints(t *testing.T) {
+	h := newWireTestServer(t, "")
+	paths := openapiPaths(t, h)
+	required := []string{
+		"/components",
+		"/components/{kind}/{namespace}/{name}",
+		"/components/{kind}/{namespace}/{name}/versions/{version}",
+		"/components/{kind}/{namespace}/{name}/versions/{version}/document",
+	}
+	for _, p := range required {
+		require.Contains(t, paths, p, "OpenAPI spec missing component path %q", p)
+	}
+}
+
 func TestOpenAPISpec_UIPathsUnchanged(t *testing.T) {
 	h := newWireTestServer(t, "")
 	paths := openapiPaths(t, h)

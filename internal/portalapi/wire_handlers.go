@@ -23,12 +23,32 @@ import (
 // per-version metadata (registry.yaml v3+); pinning to fixed values keeps
 // every response's ETag stable across portal pod respins.
 const (
-	wireNamespace   = "forge"
 	wireVersion     = "latest"
 	wirePublishedAt = "1970-01-01T00:00:00Z"
 	wirePublishedBy = "hub"
 	wireScanStatus  = "none"
 )
+
+// deriveNamespace maps a component's owner_team to its wire namespace per the
+// hub-http-registry canonical rule: lowercase, "_"→"-", drop chars outside
+// [a-z0-9-], trim leading/trailing "-". Empty input falls back to "unknown".
+func deriveNamespace(ownerTeam string) string {
+	s := strings.ToLower(strings.TrimSpace(ownerTeam))
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_':
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "unknown"
+	}
+	return out
+}
 
 // wirePublishedAtTime returns wirePublishedAt parsed as a UTC time.Time. The
 // same value is used both as the manifest's published_at field and as the
@@ -108,6 +128,7 @@ func pluralToKind(plural string) (string, bool) {
 // surface as a test failure in pkg/registry's e2e tests.
 
 type wireIndexEntry struct {
+	Kind          string   `json:"kind"`
 	Namespace     string   `json:"namespace"`
 	Name          string   `json:"name"`
 	Description   string   `json:"description"`
@@ -121,7 +142,7 @@ type wireIndexEntry struct {
 type wireIndex struct {
 	SchemaVersion int              `json:"schema_version"`
 	Registry      string           `json:"registry"`
-	Skills        []wireIndexEntry `json:"skills"`
+	Components    []wireIndexEntry `json:"components"`
 }
 
 type wireVersionEntry struct {
@@ -158,25 +179,32 @@ func (s *Server) handleWireIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idx := wireIndex{
-		SchemaVersion: 1,
+		SchemaVersion: 2,
 		Registry:      "forge-development-hub",
-		Skills:        []wireIndexEntry{},
+		Components:    []wireIndexEntry{},
 	}
 
 	for _, comp := range cat.Components {
-		if comp.Kind != "skill" {
+		// Only the four known kinds are served on the wire; an unknown kind
+		// in the catalog is skipped (logged) rather than silently emitted.
+		switch comp.Kind {
+		case "skill", "rule", "agent", "hook":
+		default:
+			s.logger.Warn("wire index: skipping component with unknown kind",
+				"name", comp.Name, "kind", comp.Kind)
 			continue
 		}
 		bundleDir := filepath.Join(s.cfg.HubPath, filepath.FromSlash(comp.Path))
 		vers, err := componentVersions(s.cfg.HubPath, bundleDir, comp.Path, comp.Kind, comp.Name)
 		if err != nil || len(vers) == 0 {
 			s.logger.Warn("wire index: skipping component, versions failed",
-				"name", comp.Name, "err", err)
+				"name", comp.Name, "kind", comp.Kind, "err", err)
 			continue
 		}
 		latest := vers[0]
-		idx.Skills = append(idx.Skills, wireIndexEntry{
-			Namespace:     wireNamespace,
+		idx.Components = append(idx.Components, wireIndexEntry{
+			Kind:          comp.Kind,
+			Namespace:     deriveNamespace(comp.OwnerTeam),
 			Name:          comp.Name,
 			Description:   comp.Description,
 			OwnerTeam:     comp.OwnerTeam,
@@ -187,8 +215,11 @@ func (s *Server) handleWireIndex(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	sort.Slice(idx.Skills, func(i, j int) bool {
-		return idx.Skills[i].Name < idx.Skills[j].Name
+	sort.Slice(idx.Components, func(i, j int) bool {
+		if idx.Components[i].Kind != idx.Components[j].Kind {
+			return idx.Components[i].Kind < idx.Components[j].Kind
+		}
+		return idx.Components[i].Name < idx.Components[j].Name
 	})
 
 	body, err := json.Marshal(idx)
@@ -229,7 +260,7 @@ func (s *Server) handleWireManifest(w http.ResponseWriter, r *http.Request) {
 
 	m := wireManifest{
 		SchemaVersion: 1,
-		Namespace:     wireNamespace,
+		Namespace:     deriveNamespace(comp.OwnerTeam),
 		Name:          comp.Name,
 		Description:   comp.Description,
 		OwnerTeam:     comp.OwnerTeam,
@@ -256,7 +287,7 @@ func (s *Server) handleWireBundleTarball(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	dir, cleanup, _, found, err := resolveVersionSource(s.cfg.HubPath, srcDir, comp.Path, comp.Kind, comp.Name, version)
+	dir, cleanup, rv, found, err := resolveVersionSource(s.cfg.HubPath, srcDir, comp.Path, comp.Kind, comp.Name, version)
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "version_resolve_failed", err.Error())
 		return
@@ -266,6 +297,16 @@ func (s *Server) handleWireBundleTarball(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	defer cleanup()
+
+	// Lifecycle: yanked versions are removed from the wire protocol —
+	// serve 410 Gone with a tiny advisory body, no caching.
+	if rv.Status == "yanked" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusGone)
+		_, _ = fmt.Fprintf(w, "version %s of %s/%s is yanked\n", version, namespace, name)
+		return
+	}
 
 	data, sha, err := bundle.BuildDeterministicTarball(dir, wirePublishedAtTime())
 	if err != nil {
@@ -338,10 +379,6 @@ func (s *Server) lookupComponent(w http.ResponseWriter, r *http.Request,
 	kindURL, namespace, name string,
 ) (*hubComponent, string, bool) {
 
-	if namespace != wireNamespace {
-		s.respondWireNotFound(w, namespace, name, "")
-		return nil, "", false
-	}
 	kind, ok := pluralToKind(kindURL)
 	if !ok {
 		s.respondWireNotFound(w, namespace, name, "")
@@ -360,6 +397,11 @@ func (s *Server) lookupComponent(w http.ResponseWriter, r *http.Request,
 
 	comp := cat.findComponent(kind, name)
 	if comp == nil {
+		s.respondWireNotFound(w, namespace, name, "")
+		return nil, "", false
+	}
+	// The requested namespace must equal the component's derived namespace.
+	if deriveNamespace(comp.OwnerTeam) != namespace {
 		s.respondWireNotFound(w, namespace, name, "")
 		return nil, "", false
 	}

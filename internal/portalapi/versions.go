@@ -112,11 +112,16 @@ func semverLess(a, b string) bool {
 }
 
 // resolvedVersion is one published version of a component.
+//
+// Status implements capability `component-lifecycle`: empty/active is
+// the default; "deprecated" is still served but flagged; "yanked"
+// causes the wire-protocol bundle handler to return 410 Gone.
 type resolvedVersion struct {
 	Version     string
 	ContentHash string
 	PublishedAt time.Time
 	Signature   string
+	Status      string
 }
 
 // readSignature returns the stored cosign bundle for a version, if the signing

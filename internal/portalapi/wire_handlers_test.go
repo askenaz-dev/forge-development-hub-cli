@@ -58,26 +58,37 @@ func do(t *testing.T, h http.Handler, method, path string, hdr http.Header) *htt
 
 // --- /v1/index.json ---
 
-func TestWireIndex_ReturnsSkillsOnly(t *testing.T) {
+func TestWireIndex_ListsAllKinds(t *testing.T) {
 	h := newWireTestServer(t, "")
 	w := do(t, h, http.MethodGet, "/v1/index.json", nil)
 	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
 	require.Equal(t, "application/json; charset=utf-8", w.Header().Get("Content-Type"))
 	require.NotEmpty(t, w.Header().Get("ETag"))
 
-	// Strict-decode through the same struct the CLI consumer uses.
+	// Strict-decode through the same struct the CLI consumer uses. The v2
+	// index lists components of every kind, each carrying an explicit kind.
 	var idx registry.Index
 	dec := json.NewDecoder(bytes.NewReader(w.Body.Bytes()))
 	dec.DisallowUnknownFields()
 	require.NoError(t, dec.Decode(&idx))
 
-	require.Equal(t, 1, idx.SchemaVersion)
+	require.Equal(t, 2, idx.SchemaVersion)
 	require.Equal(t, "forge-development-hub", idx.Registry)
-	require.Len(t, idx.Skills, 1, "only skill components appear in /v1/index.json v1")
-	require.Equal(t, "forge", idx.Skills[0].Namespace)
-	require.Equal(t, "test-skill", idx.Skills[0].Name)
-	require.Equal(t, "0.1.0", idx.Skills[0].LatestVersion)
-	require.Len(t, idx.Skills[0].LatestHash, 64)
+
+	// The hub fixture publishes one component of each kind.
+	byKind := map[string]registry.IndexEntry{}
+	for _, e := range idx.Components {
+		byKind[e.Kind] = e
+		require.Equal(t, "dx-platform", e.Namespace, "wire components share the forge namespace sentinel")
+		require.Len(t, e.LatestHash, 64)
+	}
+	for _, kind := range []string{"skill", "rule", "agent", "hook"} {
+		e, ok := byKind[kind]
+		require.True(t, ok, "kind %q missing from /v1/index.json components", kind)
+		require.NotEmpty(t, e.Name)
+		require.NotEmpty(t, e.LatestVersion)
+	}
+	require.Equal(t, "test-skill", byKind["skill"].Name)
 }
 
 func TestWireIndex_HubNotReady(t *testing.T) {
@@ -113,7 +124,7 @@ func TestWireManifest_HappyPath_AllKinds(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.plural+"/"+tc.name, func(t *testing.T) {
-			url := "/v1/" + tc.plural + "/forge/" + tc.name + "/manifest.json"
+			url := "/v1/" + tc.plural + "/dx-platform/" + tc.name + "/manifest.json"
 			w := do(t, h, http.MethodGet, url, nil)
 			require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
 
@@ -123,7 +134,7 @@ func TestWireManifest_HappyPath_AllKinds(t *testing.T) {
 			require.NoError(t, dec.Decode(&m))
 
 			require.Equal(t, 1, m.SchemaVersion)
-			require.Equal(t, "forge", m.Namespace)
+			require.Equal(t, "dx-platform", m.Namespace)
 			require.Equal(t, tc.name, m.Name)
 			require.Equal(t, "0.1.0", m.Latest)
 			require.Len(t, m.Versions, 1)
@@ -146,7 +157,7 @@ func TestWireManifest_NonForgeNamespace(t *testing.T) {
 
 func TestWireManifest_MissingComponent(t *testing.T) {
 	h := newWireTestServer(t, "")
-	w := do(t, h, http.MethodGet, "/v1/skills/forge/does-not-exist/manifest.json", nil)
+	w := do(t, h, http.MethodGet, "/v1/skills/dx-platform/does-not-exist/manifest.json", nil)
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
@@ -158,7 +169,7 @@ func TestWireManifest_UnknownKind(t *testing.T) {
 
 func TestWireManifest_CacheControlHeader(t *testing.T) {
 	h := newWireTestServer(t, "")
-	w := do(t, h, http.MethodGet, "/v1/skills/forge/test-skill/manifest.json", nil)
+	w := do(t, h, http.MethodGet, "/v1/skills/dx-platform/test-skill/manifest.json", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "public, max-age=60, must-revalidate", w.Header().Get("Cache-Control"))
 }
@@ -167,7 +178,7 @@ func TestWireManifest_CacheControlHeader(t *testing.T) {
 
 func TestWireBundleTarball_Determinism(t *testing.T) {
 	h := newWireTestServer(t, "")
-	url := "/v1/skills/forge/test-skill/versions/0.1.0/bundle.tar.gz"
+	url := "/v1/skills/dx-platform/test-skill/versions/0.1.0/bundle.tar.gz"
 
 	first := do(t, h, http.MethodGet, url, nil)
 	require.Equal(t, http.StatusOK, first.Code)
@@ -186,7 +197,7 @@ func TestWireBundleTarball_Determinism(t *testing.T) {
 
 func TestWireBundleTarball_MissingVersion(t *testing.T) {
 	h := newWireTestServer(t, "")
-	w := do(t, h, http.MethodGet, "/v1/skills/forge/test-skill/versions/9.9.9/bundle.tar.gz", nil)
+	w := do(t, h, http.MethodGet, "/v1/skills/dx-platform/test-skill/versions/9.9.9/bundle.tar.gz", nil)
 	require.Equal(t, http.StatusNotFound, w.Code)
 	var body map[string]string
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
@@ -202,7 +213,7 @@ func TestWireBundleTarball_NonForgeNamespace(t *testing.T) {
 
 func TestWireBundleTarball_ImmutableCacheControl(t *testing.T) {
 	h := newWireTestServer(t, "")
-	w := do(t, h, http.MethodGet, "/v1/skills/forge/test-skill/versions/0.1.0/bundle.tar.gz", nil)
+	w := do(t, h, http.MethodGet, "/v1/skills/dx-platform/test-skill/versions/0.1.0/bundle.tar.gz", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "public, max-age=31536000, immutable", w.Header().Get("Cache-Control"))
 }
@@ -211,7 +222,7 @@ func TestWireBundleTarball_ImmutableCacheControl(t *testing.T) {
 
 func TestWireBundleSidecar_MatchesBundleLoadHash(t *testing.T) {
 	h := newWireTestServer(t, "")
-	w := do(t, h, http.MethodGet, "/v1/skills/forge/test-skill/versions/0.1.0/bundle.sha256", nil)
+	w := do(t, h, http.MethodGet, "/v1/skills/dx-platform/test-skill/versions/0.1.0/bundle.sha256", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "text/plain; charset=utf-8", w.Header().Get("Content-Type"))
 
@@ -231,9 +242,9 @@ func TestWireBundleSidecar_MatchesBundleLoadHash(t *testing.T) {
 
 func TestWireBundleSidecar_MatchesManifestContentHash(t *testing.T) {
 	h := newWireTestServer(t, "")
-	manifestResp := do(t, h, http.MethodGet, "/v1/skills/forge/test-skill/manifest.json", nil)
+	manifestResp := do(t, h, http.MethodGet, "/v1/skills/dx-platform/test-skill/manifest.json", nil)
 	require.Equal(t, http.StatusOK, manifestResp.Code)
-	sidecarResp := do(t, h, http.MethodGet, "/v1/skills/forge/test-skill/versions/0.1.0/bundle.sha256", nil)
+	sidecarResp := do(t, h, http.MethodGet, "/v1/skills/dx-platform/test-skill/versions/0.1.0/bundle.sha256", nil)
 	require.Equal(t, http.StatusOK, sidecarResp.Code)
 
 	var m registry.Manifest
@@ -247,7 +258,7 @@ func TestWireBundleSidecar_MatchesManifestContentHash(t *testing.T) {
 
 func TestWireBundleSidecar_ImmutableCacheControl(t *testing.T) {
 	h := newWireTestServer(t, "")
-	w := do(t, h, http.MethodGet, "/v1/skills/forge/test-skill/versions/0.1.0/bundle.sha256", nil)
+	w := do(t, h, http.MethodGet, "/v1/skills/dx-platform/test-skill/versions/0.1.0/bundle.sha256", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "public, max-age=31536000, immutable", w.Header().Get("Cache-Control"))
 }
@@ -282,7 +293,7 @@ func TestWireIndex_IfNoneMatch_Stale200(t *testing.T) {
 
 func TestWireBundleTarball_IfNoneMatch_Matches304(t *testing.T) {
 	h := newWireTestServer(t, "")
-	url := "/v1/skills/forge/test-skill/versions/0.1.0/bundle.tar.gz"
+	url := "/v1/skills/dx-platform/test-skill/versions/0.1.0/bundle.tar.gz"
 	first := do(t, h, http.MethodGet, url, nil)
 	require.Equal(t, http.StatusOK, first.Code)
 	etag := first.Header().Get("ETag")

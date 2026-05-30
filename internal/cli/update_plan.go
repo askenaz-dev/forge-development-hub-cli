@@ -51,10 +51,15 @@ type UpdateFileDiff struct {
 }
 
 // planUpdates computes the diff between installed and the hub for
-// the (filtered) intersection of (installed, hub.Skills). Both
-// skillFilter and agentFilter are inclusive — empty means "all".
-// driftLocal=true forces refresh even when the local content_hash
-// has drifted (the --force flag).
+// the (filtered) intersection of (installed, hub catalog). Filters
+// are inclusive — empty means "all". driftLocal=true forces refresh
+// even when the local content_hash has drifted (the --force flag).
+//
+// kindFilter, when non-empty, restricts the plan to installs whose
+// marker.Kind matches. Skips matching is preferred to be lock-aware
+// when a project lock is provided by the caller (currently the
+// scan-based path remains the default; lock awareness is a follow-up
+// inside the same update_run.go).
 func planUpdates(
 	ctx context.Context,
 	installed []InstalledSkill,
@@ -70,7 +75,7 @@ func planUpdates(
 		if len(agentFilter) > 0 && !agentFilter[inst.Agent] {
 			continue
 		}
-		entry := reg.SkillByName(inst.Skill)
+		entry := reg.ComponentByName(inst.Skill, hubregistry.KindSkill)
 		if entry == nil {
 			plan = append(plan, UpdatePlanAction{
 				Skill: inst.Skill, Agent: inst.Agent,
@@ -107,7 +112,7 @@ func planUpdates(
 			continue
 		}
 		// Compute file-level diff so the user can see what's changing.
-		hubSrc, err := reg.FetchSkill(ctx, inst.Skill)
+		hubSrc, err := reg.FetchComponent(ctx, inst.Skill, hubregistry.KindSkill)
 		if err != nil {
 			return nil, fmt.Errorf("fetch %s: %w", inst.Skill, err)
 		}

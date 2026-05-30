@@ -7,7 +7,7 @@
 //
 //   1. binary starts cleanly with FDH_PORTAL_HUB_PATH set
 //   2. GET /v1/index.json returns 200 + Content-Type + ETag
-//   3. GET /v1/skills/forge/test-skill/manifest.json returns the manifest
+//   3. GET /v1/skills/dx-platform/test-skill/manifest.json returns the manifest
 //   4. GET .../bundle.sha256 returns the canonical content hash
 //   5. GET .../bundle.tar.gz; extracted-dir hash matches the sidecar
 //   6. Two GETs of .../bundle.tar.gz produce byte-identical bodies
@@ -94,25 +94,31 @@ func TestSmoke_PortalAPI_WireProtocol_FullFlow(t *testing.T) {
 	dec := json.NewDecoder(bytes.NewReader(idxResp.body))
 	dec.DisallowUnknownFields()
 	require.NoError(t, dec.Decode(&idx))
-	require.Equal(t, 1, idx.SchemaVersion)
-	require.Len(t, idx.Skills, 1)
-	require.Equal(t, "forge", idx.Skills[0].Namespace)
-	require.Equal(t, "test-skill", idx.Skills[0].Name)
+	require.Equal(t, 2, idx.SchemaVersion)
+	byKind := map[string]registry.IndexEntry{}
+	for _, e := range idx.Components {
+		byKind[e.Kind] = e
+	}
+	for _, k := range []string{"skill", "rule", "agent", "hook"} {
+		require.Contains(t, byKind, k, "kind %q present in /v1/index.json", k)
+	}
+	require.Equal(t, "dx-platform", byKind["skill"].Namespace)
+	require.Equal(t, "test-skill", byKind["skill"].Name)
 
 	// 11.3 — GET manifest
-	manResp := getOK(t, client, base+"/v1/skills/forge/test-skill/manifest.json")
+	manResp := getOK(t, client, base+"/v1/skills/dx-platform/test-skill/manifest.json")
 	var man registry.Manifest
 	dec2 := json.NewDecoder(bytes.NewReader(manResp.body))
 	dec2.DisallowUnknownFields()
 	require.NoError(t, dec2.Decode(&man))
-	require.Equal(t, "forge", man.Namespace)
-	require.Equal(t, "latest", man.Latest)
+	require.Equal(t, "dx-platform", man.Namespace)
+	require.Equal(t, "0.1.0", man.Latest)
 	require.Len(t, man.Versions, 1)
 	manifestHash := man.Versions[0].ContentHash
 	require.Len(t, manifestHash, 64)
 
 	// 11.4 — GET bundle.sha256, capture the hash
-	sidecarResp := getOK(t, client, base+"/v1/skills/forge/test-skill/versions/latest/bundle.sha256")
+	sidecarResp := getOK(t, client, base+"/v1/skills/dx-platform/test-skill/versions/0.1.0/bundle.sha256")
 	require.Equal(t, "text/plain; charset=utf-8", sidecarResp.contentType)
 	sidecarFields := strings.Fields(string(sidecarResp.body))
 	require.GreaterOrEqual(t, len(sidecarFields), 2)
@@ -122,7 +128,7 @@ func TestSmoke_PortalAPI_WireProtocol_FullFlow(t *testing.T) {
 		"sidecar hash and manifest content_hash must agree")
 
 	// 11.5 — GET bundle.tar.gz; extracted-dir hash matches sidecar.
-	tarResp := getOK(t, client, base+"/v1/skills/forge/test-skill/versions/latest/bundle.tar.gz")
+	tarResp := getOK(t, client, base+"/v1/skills/dx-platform/test-skill/versions/0.1.0/bundle.tar.gz")
 	require.Equal(t, "application/gzip", tarResp.contentType)
 	require.NotEmpty(t, tarResp.etag)
 
@@ -134,7 +140,7 @@ func TestSmoke_PortalAPI_WireProtocol_FullFlow(t *testing.T) {
 		"canonical content hash of extracted tarball must equal sidecar SHA")
 
 	// 11.6 — Two GETs of bundle.tar.gz produce identical bytes.
-	tarResp2 := getOK(t, client, base+"/v1/skills/forge/test-skill/versions/latest/bundle.tar.gz")
+	tarResp2 := getOK(t, client, base+"/v1/skills/dx-platform/test-skill/versions/0.1.0/bundle.tar.gz")
 	require.True(t, bytes.Equal(tarResp.body, tarResp2.body),
 		"bundle.tar.gz must be byte-identical across requests")
 	require.Equal(t, tarResp.etag, tarResp2.etag)

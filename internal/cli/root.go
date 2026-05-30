@@ -47,7 +47,11 @@ func newRootCmd(info BuildInfo) *cobra.Command {
 
 	root.AddCommand(newInitCmd(info))
 	root.AddCommand(newInstallCmd(info))
+	root.AddCommand(newUninstallCmd(info))
 	root.AddCommand(newListCmd(info))
+	root.AddCommand(newListInstalledCmd(info))
+	root.AddCommand(newRepairCmd(info))
+	root.AddCommand(newScanCmd(info))
 	root.AddCommand(newDoctorCmd(info))
 	root.AddCommand(newSearchCmd(info))
 	root.AddCommand(newConfigCmd(info))

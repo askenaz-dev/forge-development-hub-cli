@@ -1,6 +1,9 @@
 {
   "nav": {
     "skills": "Skills",
+    "rules": "Rules",
+    "agents": "Agents",
+    "hooks": "Hooks",
     "install": "Install CLI",
     "getStarted": "Get started",
     "signIn": "Sign in"
@@ -31,6 +34,25 @@
     "title": "Skill catalog",
     "searchPlaceholder": "Search skills by name, namespace, or tag",
     "empty": "No skills match that query."
+  },
+  "catalog": {
+    "title": "{kind} catalog",
+    "searchPlaceholder": "Search {kind} by name, namespace, or tag",
+    "empty": "No matching {kind} found."
+  },
+  "kinds": {
+    "skill": "Skills",
+    "rule": "Rules",
+    "agent": "Agents",
+    "hook": "Hooks"
+  },
+  "componentDetail": {
+    "installCommand": "Install command",
+    "installUnavailable": "Direct `fdh install` currently supports skills. {kind} are materialized into your project via `fdh init` and hub profiles.",
+    "ownerTeam": "Owner team",
+    "scanStatus": "Scan status",
+    "versionHistory": "Version history",
+    "kind": "Kind"
   },
   "skillDetail": {
     "installCommand": "Install command",

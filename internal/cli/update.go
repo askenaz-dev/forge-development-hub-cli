@@ -31,5 +31,6 @@ preserved — pass --force to overwrite them.`,
 	cmd.Flags().StringSlice("agent", nil, "limit updates to the named agent(s)")
 	cmd.Flags().Bool("force", false, "overwrite locally-edited skills (drift)")
 	cmd.Flags().Bool("include-new-defaults", false, "also propose installing default:true skills not yet present")
+	cmd.Flags().String("kind", "", "limit updates to the named kind (skill|rule|agent|hook)")
 	return cmd
 }

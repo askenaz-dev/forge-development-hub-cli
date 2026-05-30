@@ -7,28 +7,34 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/forge/fdh/pkg/managed"
 )
 
-// MarkerName returns the conventional `.skill-version` filename for
-// a given agent. Directory-based agents (Claude, Codex) use the
-// fixed name `.skill-version` inside the skill folder. Flat agents
-// (Copilot, OpenCode) co-locate one marker per skill next to the
-// prompt file as `.skill-version-<name>`.
+// MarkerName returns the marker filename for a (agent, skillName)
+// pair using the legacy `.skill-version` convention.
+//
+// Deprecated: use managed.FilenameFor (with isFlat selected by
+// agent kind). Kept for back-compat with external callers during the
+// transition window.
 func MarkerName(agent, skillName string) string {
 	switch agent {
 	case "claude-code", "codex":
-		return ".skill-version"
-	case "copilot", "opencode":
-		return ".skill-version-" + skillName
+		return managed.Filename
+	case "copilot":
+		return managed.FilenameFor(skillName+".prompt.md", true)
+	case "opencode":
+		return managed.FilenameFor(skillName+".md", true)
 	default:
-		// Defensive default: a name that's still parseable as a
-		// marker by isMarker() so re-reads don't confuse the hash.
-		return ".skill-version-" + skillName
+		return managed.FilenameFor(skillName+".md", true)
 	}
 }
 
 // MarshalMarker serializes a SkillVersionMarker to its on-disk YAML
-// form. The marker is intentionally tiny so devs can read it.
+// form.
+//
+// Deprecated: use managed.Write directly. Kept for tests during the
+// transition window.
 func MarshalMarker(m SkillVersionMarker) ([]byte, error) {
 	if m.InstalledAt.IsZero() {
 		m.InstalledAt = time.Now().UTC()
@@ -40,8 +46,9 @@ func MarshalMarker(m SkillVersionMarker) ([]byte, error) {
 	return body, nil
 }
 
-// UnmarshalMarker reads a marker file body. Used by `fdh update`
-// when discovering installed skills.
+// UnmarshalMarker reads a marker file body.
+//
+// Deprecated: use managed.Read directly.
 func UnmarshalMarker(body []byte) (SkillVersionMarker, error) {
 	var m SkillVersionMarker
 	if err := yaml.Unmarshal(body, &m); err != nil {
@@ -50,17 +57,67 @@ func UnmarshalMarker(body []byte) (SkillVersionMarker, error) {
 	return m, nil
 }
 
-// LoadMarker reads and parses the marker at path.
+// LoadMarker reads and parses the marker at path. Tolerates legacy
+// `.skill-version` markers by routing through managed.Read.
 func LoadMarker(path string) (SkillVersionMarker, error) {
-	body, err := os.ReadFile(path)
+	m, err := managed.Read(path)
 	if err != nil {
 		return SkillVersionMarker{}, err
 	}
-	return UnmarshalMarker(body)
+	return SkillVersionMarker(m), nil
 }
 
-// IsMarkerFilename reports whether name matches the marker
-// filename convention (exposed for callers walking install dirs).
+// IsMarkerFilename reports whether name matches a current or legacy
+// marker filename convention.
 func IsMarkerFilename(name string) bool {
-	return name == ".skill-version" || strings.HasPrefix(name, ".skill-version-")
+	if managed.IsManagedFilename(name) {
+		return true
+	}
+	if managed.IsLegacyFilename(name) {
+		return true
+	}
+	// Defensive: an early implementation of flat markers used the
+	// raw `.skill-version-<name>` form, which IsLegacyFilename
+	// already covers; keep an explicit guard for the empty-suffix
+	// edge case that strings.HasPrefix matches.
+	return strings.HasPrefix(name, ".skill-version-") && name != ".skill-version-"
+}
+
+// IsMarkerFilenameAny is the same predicate as IsMarkerFilename;
+// kept as a non-Deprecated alias so external code can adopt the
+// clearer name when it migrates off the legacy.
+func IsMarkerFilenameAny(name string) bool { return IsMarkerFilename(name) }
+
+// MigrateLegacyMarker, when path points to a legacy `.skill-version`
+// file, rewrites it as `.fdh-managed.yaml` in the same directory.
+// No-op when path is already canonical.
+func MigrateLegacyMarker(path string) (string, SkillVersionMarker, error) {
+	base := pathBase(path)
+	if managed.IsLegacyFilename(base) {
+		newPath, m, err := managed.Migrate(path)
+		return newPath, SkillVersionMarker(m), err
+	}
+	// Path is already canonical; return as-is.
+	m, err := managed.Read(path)
+	if err != nil {
+		return path, SkillVersionMarker{}, err
+	}
+	return path, SkillVersionMarker(m), nil
+}
+
+// pathBase isolates the import of path/filepath to one helper so
+// downstream files don't accidentally take a transitive dep.
+func pathBase(p string) string {
+	// Use os.PathSeparator-aware split via stdlib.
+	if i := strings.LastIndexAny(p, `/\`); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}
+
+// fileExists is a tiny helper used by callers that want to check for
+// a legacy marker before initiating a write.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

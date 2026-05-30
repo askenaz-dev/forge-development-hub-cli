@@ -30,7 +30,7 @@ func TestWireManifest_GitTagVersions(t *testing.T) {
 			"  - name: demo\n"+
 			"    kind: skill\n"+
 			"    description: demo component\n"+
-			"    owner_team: t\n"+
+			"    owner_team: dx-platform\n"+
 			"    tags: []\n"+
 			"    default: false\n"+
 			"    min_fdh_version: \"0.4.0\"\n"+
@@ -61,7 +61,7 @@ func TestWireManifest_GitTagVersions(t *testing.T) {
 	writeFixtureFile(t, filepath.Join(hub, ".sigs", "skills", "demo", "0.2.0.bundle"), "cosign-bundle-xyz\n")
 
 	h := newWireTestServer(t, hub)
-	w := do(t, h, http.MethodGet, "/v1/skills/forge/demo/manifest.json", nil)
+	w := do(t, h, http.MethodGet, "/v1/skills/dx-platform/demo/manifest.json", nil)
 	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
 
 	var m registry.Manifest
@@ -81,7 +81,7 @@ func TestWireManifest_GitTagVersions(t *testing.T) {
 
 	// The 0.1.0 bundle must serve its historical content (410/old tree), with a
 	// sidecar hash matching the manifest entry.
-	side := do(t, h, http.MethodGet, "/v1/skills/forge/demo/versions/0.1.0/bundle.sha256", nil)
+	side := do(t, h, http.MethodGet, "/v1/skills/dx-platform/demo/versions/0.1.0/bundle.sha256", nil)
 	require.Equal(t, http.StatusOK, side.Code)
 	require.Contains(t, side.Body.String(), m.Versions[1].ContentHash)
 }

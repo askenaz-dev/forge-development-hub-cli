@@ -39,6 +39,21 @@ type Registry interface {
 	Source() string
 }
 
+// KindAware is an optional capability some Registry implementations
+// expose. Implementations that satisfy it can serve per-kind
+// manifests and bundles (HTTP wire-protocol path). Callers should
+// use a type assertion + fall back to the skill-only methods of
+// Registry when KindAware is not satisfied.
+type KindAware interface {
+	// ManifestByKind returns the per-component manifest scoped to the
+	// kind ("skill" | "rule" | "agent" | "hook").
+	ManifestByKind(ctx context.Context, kind, namespace, name string) (Manifest, error)
+
+	// FetchBundleByKind returns a BundlePath for the (kind, ns, name,
+	// version) tuple.
+	FetchBundleByKind(ctx context.Context, kind, namespace, name, version string) (BundlePath, error)
+}
+
 // BundlePath holds the result of FetchBundle: the path to the extracted
 // bundle directory and a cleanup function the caller must invoke.
 type BundlePath struct {

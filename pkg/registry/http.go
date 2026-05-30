@@ -142,12 +142,25 @@ func (r *HTTPRegistry) Index(ctx context.Context) (Index, error) {
 	if err := unmarshalStrict(body, &idx); err != nil {
 		return Index{}, fmt.Errorf("parse %s: %w", u, err)
 	}
+	idx.normalize()
 	return idx, nil
 }
 
 // Manifest fetches and returns the per-skill manifest.
+//
+// Equivalent to ManifestByKind(ctx, "skill", namespace, name).
 func (r *HTTPRegistry) Manifest(ctx context.Context, namespace, name string) (Manifest, error) {
-	u := r.BaseURL + path("skills", namespace, name, "manifest.json")
+	return r.ManifestByKind(ctx, "skill", namespace, name)
+}
+
+// ManifestByKind fetches the per-component manifest for the
+// (kind, namespace, name) tuple. URL: <base>/<kind-plural>/<ns>/<name>/manifest.json.
+func (r *HTTPRegistry) ManifestByKind(ctx context.Context, kind, namespace, name string) (Manifest, error) {
+	plural := kindPlural(kind)
+	if plural == "" {
+		return Manifest{}, fmt.Errorf("unknown kind %q (want skill|rule|agent|hook)", kind)
+	}
+	u := r.BaseURL + path(plural, namespace, name, "manifest.json")
 	body, err := r.fetchCached(ctx, u)
 	if err != nil {
 		return Manifest{}, err
@@ -157,12 +170,27 @@ func (r *HTTPRegistry) Manifest(ctx context.Context, namespace, name string) (Ma
 		return Manifest{}, fmt.Errorf("parse %s: %w", u, err)
 	}
 	if len(m.Versions) == 0 {
-		return Manifest{}, fmt.Errorf("manifest %s/%s has no versions", namespace, name)
+		return Manifest{}, fmt.Errorf("manifest %s/%s/%s has no versions", kind, namespace, name)
 	}
 	if m.FindVersion(m.Latest) == nil {
-		return Manifest{}, fmt.Errorf("manifest %s/%s latest=%s missing from versions[]", namespace, name, m.Latest)
+		return Manifest{}, fmt.Errorf("manifest %s/%s/%s latest=%s missing from versions[]", kind, namespace, name, m.Latest)
 	}
 	return m, nil
+}
+
+// kindPlural maps a kind to its URL plural segment.
+func kindPlural(kind string) string {
+	switch kind {
+	case "skill":
+		return "skills"
+	case "rule":
+		return "rules"
+	case "agent":
+		return "agents"
+	case "hook":
+		return "hooks"
+	}
+	return ""
 }
 
 // FetchBundle fetches and verifies the requested bundle. The bundle.sha256
@@ -176,7 +204,16 @@ func (r *HTTPRegistry) Manifest(ctx context.Context, namespace, name string) (Ma
 // tarball bytes — a separate quantity that lets us short-circuit re-GET
 // on byte-identical responses without re-extracting.
 func (r *HTTPRegistry) FetchBundle(ctx context.Context, namespace, name, version string) (BundlePath, error) {
-	base := r.BaseURL + path("skills", namespace, name, "versions", version) + "/"
+	return r.FetchBundleByKind(ctx, "skill", namespace, name, version)
+}
+
+// FetchBundleByKind extends FetchBundle with explicit kind routing.
+func (r *HTTPRegistry) FetchBundleByKind(ctx context.Context, kind, namespace, name, version string) (BundlePath, error) {
+	plural := kindPlural(kind)
+	if plural == "" {
+		return BundlePath{}, fmt.Errorf("unknown kind %q (want skill|rule|agent|hook)", kind)
+	}
+	base := r.BaseURL + path(plural, namespace, name, "versions", version) + "/"
 	sumURL := base + "bundle.sha256"
 	tarURL := base + "bundle.tar.gz"
 
@@ -192,7 +229,7 @@ func (r *HTTPRegistry) FetchBundle(ctx context.Context, namespace, name, version
 	// Cross-check the sidecar against the manifest entry when one is
 	// available. A mismatch is fatal — the sidecar and the manifest both
 	// describe the canonical content hash, so they must agree.
-	if m, mErr := r.Manifest(ctx, namespace, name); mErr == nil {
+	if m, mErr := r.ManifestByKind(ctx, kind, namespace, name); mErr == nil {
 		if v := m.FindVersion(version); v != nil && v.ContentHash != "" && v.ContentHash != expectedSHA {
 			return BundlePath{}, HashMismatch{Expected: v.ContentHash, Got: expectedSHA}
 		}
@@ -273,7 +310,7 @@ func (r *HTTPRegistry) Search(ctx context.Context, query string) ([]SkillSummary
 		if !matchQuery(blob, query) {
 			continue
 		}
-		out = append(out, SkillSummary(e))
+		out = append(out, e.toSummary())
 	}
 	return out, nil
 }

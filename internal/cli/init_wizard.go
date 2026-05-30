@@ -9,12 +9,17 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"golang.org/x/term"
 
 	"github.com/forge/fdh/pkg/adapters"
+	"github.com/forge/fdh/pkg/consumerlock"
+	"github.com/forge/fdh/pkg/consumermanifest"
+	"github.com/forge/fdh/pkg/gitignore"
 	"github.com/forge/fdh/pkg/hubregistry"
+	"github.com/forge/fdh/pkg/state"
 )
 
 // wizardInput is the data flowing from `runInitWizard` into the
@@ -186,7 +191,8 @@ func runInitWizard(
 	}
 
 	// Step 2: skills. Filter the hub catalog by the chosen agents.
-	defaults, extras := splitDefaultsAndExtras(reg.Skills, agents)
+	skillsCatalog := reg.ComponentsByKind(hubregistry.KindSkill)
+	defaults, extras := splitDefaultsAndExtras(skillsCatalog, agents)
 	if noDefaults {
 		// User opted out of defaults entirely.
 		defaults = nil
@@ -204,7 +210,7 @@ func runInitWizard(
 		skills = skillNames(defaults)
 	}
 
-	skills, unknown := resolveSkillSelection(skills, reg.Skills)
+	skills, unknown := resolveSkillSelection(skills, skillsCatalog)
 	if len(unknown) > 0 {
 		return nil, nil, nil, Errorf(ExitInvalidUsage,
 			"unknown skill(s): %s", strings.Join(unknown, ", "))
@@ -230,12 +236,12 @@ func runInitWizard(
 	}
 	var installed []InstalledSkillResult
 	for _, name := range skills {
-		entry := reg.SkillByName(name)
+		entry := reg.ComponentByName(name, hubregistry.KindSkill)
 		if entry == nil {
 			// Should be unreachable — resolveSkillSelection rejects unknowns.
 			continue
 		}
-		srcDir, err := reg.FetchSkill(ctx, name)
+		srcDir, err := reg.FetchComponent(ctx, name, hubregistry.KindSkill)
 		if err != nil {
 			return agents, skills, installed, Wrap(ExitRegistryUnreach,
 				fmt.Errorf("fetch skill %s: %w", name, err))
@@ -275,8 +281,51 @@ func runInitWizard(
 			})
 		}
 	}
+
+	// Persist a manifest + lock + state for the chosen selection so
+	// subsequent `fdh install` / `fdh update` runs see a coherent
+	// declarative state. Skill-only for now; rule/agent/hook bundles
+	// can be added once the wizard offers them.
+	if rc.ProjectRoot != "" && len(skills) > 0 {
+		_ = persistWizardSelection(rc, reg, skills, installedByFDH)
+	}
 	return agents, skills, installed, nil
 }
+
+// persistWizardSelection writes .fdh/manifest.yaml + .fdh/lock.yaml +
+// updates ~/.fdh/state.json so the wizard's choice is reproducible
+// across machines. Best-effort: errors are silently ignored to avoid
+// breaking the wizard happy path.
+func persistWizardSelection(rc *runContext, reg *hubregistry.Registry, skills []string, installedByFDH string) error {
+	m := &consumermanifest.Manifest{SchemaVersion: 1}
+	for _, name := range skills {
+		m.Skills = append(m.Skills, consumermanifest.Entry{Name: name})
+	}
+	if err := consumermanifest.Write(rc.ProjectRoot, m); err != nil {
+		return err
+	}
+	resolved, err := consumermanifest.Expand(m, reg, nil)
+	if err != nil {
+		return err
+	}
+	lock := consumerlock.Build(resolved, reg.HubCommit, timeNow(), "")
+	if err := consumerlock.Write(rc.ProjectRoot, lock); err != nil {
+		return err
+	}
+	managedPaths := collectManagedPathsForGitignore(rc.ProjectRoot, nil)
+	_ = gitignore.Apply(rc.ProjectRoot, managedPaths)
+	if rc.HomeDir != "" {
+		if s, sErr := state.Load(rc.HomeDir); sErr == nil {
+			s.UpsertProject(rc.ProjectRoot, state.ProjectEntry{ManagedPaths: managedPaths})
+			s.HubCache = state.HubCache{Commit: reg.HubCommit}
+			_ = state.Save(rc.HomeDir, s)
+		}
+	}
+	return nil
+}
+
+// timeNow is a small indirection so tests can stub if needed (none do yet).
+func timeNow() time.Time { return time.Now() }
 
 // detectedWizardAgents returns the IDs of agents present on this host
 // for whom a SkillAdapter is shipped. The intersection guards against
@@ -296,7 +345,7 @@ func detectedWizardAgents(rc *runContext) []string {
 // splitDefaultsAndExtras partitions the catalog into the wizard's
 // two MultiSelect groups, retaining only entries that support at
 // least one of the chosen agents.
-func splitDefaultsAndExtras(all []hubregistry.SkillEntry, agents []string) (defaults, extras []skillChoice) {
+func splitDefaultsAndExtras(all []hubregistry.ComponentEntry, agents []string) (defaults, extras []skillChoice) {
 	for _, s := range all {
 		if !anyShared(s.AgentsSupported, agents) {
 			continue
@@ -324,7 +373,7 @@ func skillNames(choices []skillChoice) []string {
 // resolveSkillSelection maps the user-given names to the registry,
 // returning the validated list and any unknown names so the caller
 // can surface a clear error.
-func resolveSkillSelection(picked []string, catalog []hubregistry.SkillEntry) (valid, unknown []string) {
+func resolveSkillSelection(picked []string, catalog []hubregistry.ComponentEntry) (valid, unknown []string) {
 	known := map[string]bool{}
 	for _, e := range catalog {
 		known[e.Name] = true
