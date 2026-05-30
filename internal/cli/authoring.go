@@ -394,10 +394,10 @@ func runKindShare(cmd *cobra.Command, args []string, info BuildInfo, kind string
 	base, _ := cmd.Flags().GetString("base")
 	branch := fmt.Sprintf("share/%s/%s", kind, name)
 	if out, err := gitIn(repo, "checkout", "-q", base); err != nil {
-		return Wrap(ExitGenericFailure, fmt.Errorf("git checkout %s: %v: %s", base, err, out))
+		return Wrap(ExitGenericFailure, fmt.Errorf("git checkout %s: %w: %s", base, err, out))
 	}
 	if out, err := gitIn(repo, "checkout", "-q", "-b", branch); err != nil {
-		return Wrap(ExitGenericFailure, fmt.Errorf("git checkout -b %s: %v: %s", branch, err, out))
+		return Wrap(ExitGenericFailure, fmt.Errorf("git checkout -b %s: %w: %s", branch, err, out))
 	}
 
 	// 4. Copy the bundle + append the registry entry (default:false).
@@ -418,11 +418,11 @@ func runKindShare(cmd *cobra.Command, args []string, info BuildInfo, kind string
 
 	// 5. Commit with the CLI-authored conventional scope.
 	if out, err := gitIn(repo, "add", "-A"); err != nil {
-		return Wrap(ExitGenericFailure, fmt.Errorf("git add: %v: %s", err, out))
+		return Wrap(ExitGenericFailure, fmt.Errorf("git add: %w: %s", err, out))
 	}
 	msg := fmt.Sprintf("feat(%s): add %s", name, kind)
 	if out, err := gitIn(repo, "commit", "-q", "-m", msg); err != nil {
-		return Wrap(ExitGenericFailure, fmt.Errorf("git commit: %v: %s", err, out))
+		return Wrap(ExitGenericFailure, fmt.Errorf("git commit: %w: %s", err, out))
 	}
 
 	out := cmd.OutOrStdout()
@@ -444,13 +444,13 @@ func runKindShare(cmd *cobra.Command, args []string, info BuildInfo, kind string
 	}
 	if _, err := exec.LookPath("gh"); err != nil {
 		fmt.Fprintf(out, "\nBranch pushed. Install `gh` (or open the PR manually) to finish.\n")
-		return nil
+		return nil //nolint:nilerr // gh absence is a graceful exit, not an error
 	}
 	prCmd := exec.Command("gh", "pr", "create", "--fill", "--head", branch, "--base", base)
 	prCmd.Dir = repo
 	prOut, err := prCmd.CombinedOutput()
 	if err != nil {
-		return Wrap(ExitGenericFailure, fmt.Errorf("gh pr create: %v: %s", err, strings.TrimSpace(string(prOut))))
+		return Wrap(ExitGenericFailure, fmt.Errorf("gh pr create: %w: %s", err, strings.TrimSpace(string(prOut))))
 	}
 	fmt.Fprintf(out, "\n%s\n", strings.TrimSpace(string(prOut)))
 	fmt.Fprintf(out, "PR opened. It is NOT part of the hub until a reviewer approves and a publisher merges it.\n")

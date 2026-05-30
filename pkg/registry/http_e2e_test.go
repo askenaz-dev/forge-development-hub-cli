@@ -35,8 +35,8 @@ func TestE2E_HTTP_FullFlow(t *testing.T) {
 			OwnerTeam:   "appsec",
 			Tags:        []string{"owasp", "security"},
 			Files: map[string]string{
-				"SKILL.md":             testutil.FixtureSKILLMD("owasp-quick-review", "OWASP top-10 quick review."),
-				"references/owasp.md":  "Top 10 ...",
+				"SKILL.md":            testutil.FixtureSKILLMD("owasp-quick-review", "OWASP top-10 quick review."),
+				"references/owasp.md": "Top 10 ...",
 			},
 		},
 		{

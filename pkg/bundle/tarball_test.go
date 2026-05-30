@@ -92,9 +92,9 @@ func TestBuildDeterministicTarball_ZeroMtimeInHeaders(t *testing.T) {
 	defer func() { _ = gz.Close() }()
 
 	// gzip header: Name empty, OS 255, ModTime zero.
-	require.Equal(t, "", gz.Header.Name)
-	require.Equal(t, byte(255), gz.Header.OS)
-	require.True(t, gz.Header.ModTime.IsZero() || gz.Header.ModTime.Equal(time.Unix(0, 0)))
+	require.Equal(t, "", gz.Name)
+	require.Equal(t, byte(255), gz.OS)
+	require.True(t, gz.ModTime.IsZero() || gz.ModTime.Equal(time.Unix(0, 0)))
 
 	tr := tar.NewReader(gz)
 	for {

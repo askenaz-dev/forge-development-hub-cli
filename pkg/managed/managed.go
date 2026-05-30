@@ -40,10 +40,10 @@ const (
 // legacyDirMarker / legacyFlatPrefix match the deprecated marker
 // names shipped by earlier CLI releases. Kept for migration.
 const (
-	legacyDirMarker   = ".skill-version"
-	legacyFlatPrefix  = ".skill-version-"
-	legacyFlatSuffix  = "" // historical: just legacyFlatPrefix + <name>
-	newFlatSuffix     = ".fdh-managed.yaml"
+	legacyDirMarker  = ".skill-version"
+	legacyFlatPrefix = ".skill-version-"
+	legacyFlatSuffix = "" // historical: just legacyFlatPrefix + <name>
+	newFlatSuffix    = ".fdh-managed.yaml"
 )
 
 // Marker is the on-disk YAML shape of `.fdh-managed.yaml`.

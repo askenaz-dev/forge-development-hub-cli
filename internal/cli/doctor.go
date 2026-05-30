@@ -20,13 +20,13 @@ import (
 
 // DoctorReport is the JSON shape emitted by `doctor --json`.
 type DoctorReport struct {
-	InstallerVersion string                `json:"installer_version"`
-	HomeDir          string                `json:"home_dir"`
-	ProjectRoot      string                `json:"project_root,omitempty"`
-	Registry         RegistryHealth        `json:"registry"`
-	Agents           []AgentHealth         `json:"agents"`
-	Issues           []DoctorIssue         `json:"issues"`
-	ManagedDrift     []ManagedDriftEntry   `json:"managed_drift,omitempty"`
+	InstallerVersion string              `json:"installer_version"`
+	HomeDir          string              `json:"home_dir"`
+	ProjectRoot      string              `json:"project_root,omitempty"`
+	Registry         RegistryHealth      `json:"registry"`
+	Agents           []AgentHealth       `json:"agents"`
+	Issues           []DoctorIssue       `json:"issues"`
+	ManagedDrift     []ManagedDriftEntry `json:"managed_drift,omitempty"`
 }
 
 // ManagedDriftEntry describes one component path inspected for drift

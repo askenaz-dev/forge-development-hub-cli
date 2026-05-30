@@ -2,7 +2,6 @@ package adapters
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -88,9 +87,9 @@ func IsMarkerFilename(name string) bool {
 // clearer name when it migrates off the legacy.
 func IsMarkerFilenameAny(name string) bool { return IsMarkerFilename(name) }
 
-// MigrateLegacyMarker, when path points to a legacy `.skill-version`
-// file, rewrites it as `.fdh-managed.yaml` in the same directory.
-// No-op when path is already canonical.
+// MigrateLegacyMarker rewrites a legacy `.skill-version` file at path as
+// `.fdh-managed.yaml` in the same directory. No-op when path is already
+// canonical.
 func MigrateLegacyMarker(path string) (string, SkillVersionMarker, error) {
 	base := pathBase(path)
 	if managed.IsLegacyFilename(base) {
@@ -113,11 +112,4 @@ func pathBase(p string) string {
 		return p[i+1:]
 	}
 	return p
-}
-
-// fileExists is a tiny helper used by callers that want to check for
-// a legacy marker before initiating a write.
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

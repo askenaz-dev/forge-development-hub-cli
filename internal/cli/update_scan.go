@@ -30,7 +30,7 @@ type InstalledSkill struct {
 	InstallDir string `json:"install_dir"`
 
 	// Marker is the deserialised contents of MarkerPath.
-	Marker adapters.SkillVersionMarker `json:"marker"`
+	Marker adapters.SkillVersionMarker `json:"marker"` //nolint:staticcheck // deprecated alias retained here; marker-type migration tracked separately
 }
 
 // findInstalledSkills scans the conventional directories of every

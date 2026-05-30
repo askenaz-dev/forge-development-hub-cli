@@ -12,9 +12,9 @@ import (
 
 // RepairResult is the JSON shape emitted by `fdh repair --json`.
 type RepairResult struct {
-	DryRun  bool             `json:"dry_run,omitempty"`
-	Issues  []RepairIssue    `json:"issues"`
-	Cleaned []string         `json:"cleaned,omitempty"`
+	DryRun  bool          `json:"dry_run,omitempty"`
+	Issues  []RepairIssue `json:"issues"`
+	Cleaned []string      `json:"cleaned,omitempty"`
 }
 
 // RepairIssue is one divergence detected during repair.

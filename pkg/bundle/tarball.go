@@ -78,10 +78,10 @@ func BuildDeterministicTarball(srcDir string, publishedAt time.Time) ([]byte, st
 	if err != nil {
 		return nil, "", fmt.Errorf("gzip writer: %w", err)
 	}
-	gz.Header.Name = ""
-	gz.Header.Comment = ""
-	gz.Header.ModTime = time.Time{}
-	gz.Header.OS = 255 // unknown — avoids embedding the build host's OS byte
+	gz.Name = ""
+	gz.Comment = ""
+	gz.ModTime = time.Time{}
+	gz.OS = 255 // unknown — avoids embedding the build host's OS byte
 
 	tw := tar.NewWriter(gz)
 

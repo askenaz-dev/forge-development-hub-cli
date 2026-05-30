@@ -164,7 +164,7 @@ func gitTagVersions(hubPath, plural, name string) (map[string]taggedCommit, *gog
 		ver := strings.TrimPrefix(short, prefix)
 		commit, err := resolveCommit(repo, ref.Hash())
 		if err != nil {
-			return nil // skip unresolvable tag
+			return nil //nolint:nilerr // skip unresolvable tag
 		}
 		out[ver] = taggedCommit{When: commit.Committer.When.UTC(), Commit: commit.Hash}
 		return nil
@@ -224,7 +224,7 @@ func hashAtCommit(repo *gogit.Repository, commitHash plumbing.Hash, compPath str
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 	if err := extractTreeAt(repo, commitHash, compPath, tmp); err != nil {
 		return "", err
 	}

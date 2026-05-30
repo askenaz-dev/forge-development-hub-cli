@@ -115,7 +115,6 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 		return Wrap(ExitGenericFailure, fmt.Errorf("read manifest %s/%s: %w", namespace, name, err))
 	}
 	if version == "" {
-		version = manifest.Latest
 		// Walk down from latest to skip yanked versions when no
 		// explicit version was requested.
 		version = highestNonYanked(&manifest)
@@ -305,7 +304,7 @@ func collectManagedPathsForGitignore(projectRoot string, writes []InstallWriteIn
 	for _, dir := range knownProjectInstallDirs(projectRoot) {
 		_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, walkErr error) error {
 			if walkErr != nil {
-				return nil
+				return nil //nolint:nilerr // skip unreadable dirs during best-effort scan
 			}
 			if d.IsDir() {
 				return nil
