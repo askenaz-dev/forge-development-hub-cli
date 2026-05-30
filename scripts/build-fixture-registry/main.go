@@ -1,6 +1,13 @@
 // build-fixture-registry is a small developer utility that creates a
 // spec-compliant registry on disk, useful for local E2E testing of the
-// installer without needing a real Git remote.
+// installer (the CLI consumer — GitRegistry/HTTPRegistry) without needing a
+// real Git remote.
+//
+// NOTE: this fixture is NOT the portal's data source. The portal-api serves
+// its catalog from the real hub content at FDH_PORTAL_HUB_PATH (a
+// forge-development-hub checkout: hub/registry.yaml + the four primitive
+// directories). This script only seeds a built-registry tree for exercising
+// the CLI's install/update flow locally.
 //
 // Usage:
 //

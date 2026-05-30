@@ -284,7 +284,7 @@ func (g *GitRegistry) Search(ctx context.Context, query string) ([]SkillSummary,
 		if !matchQuery(blob, query) {
 			continue
 		}
-		out = append(out, SkillSummary(e))
+		out = append(out, e.toSummary())
 	}
 	return out, nil
 }
@@ -345,6 +345,7 @@ func readIndex(path string) (Index, error) {
 	if err := unmarshalStrict(data, &idx); err != nil {
 		return Index{}, fmt.Errorf("parse %s: %w", path, err)
 	}
+	idx.normalize()
 	return idx, nil
 }
 

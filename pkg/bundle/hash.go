@@ -39,6 +39,37 @@ func (b *Bundle) Hash() (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// HashDir computes the canonical content hash of srcDir without requiring
+// a SKILL.md entrypoint or frontmatter validation. It is the loader-free
+// equivalent of (*Bundle).Hash and produces the same digest as long as the
+// underlying file set is the same.
+//
+// Wire-protocol handlers use this for non-skill kinds (rules/agents/hooks)
+// whose entrypoint files are named per kind (RULE.md, AGENT.md, HOOK.md)
+// and would fail bundle.Load's SKILL.md requirement.
+func HashDir(srcDir string) (string, error) {
+	abs, err := os.Stat(srcDir)
+	if err != nil {
+		return "", fmt.Errorf("stat %s: %w", srcDir, err)
+	}
+	if !abs.IsDir() {
+		return "", fmt.Errorf("not a directory: %s", srcDir)
+	}
+	files, err := walkFiles(srcDir)
+	if err != nil {
+		return "", fmt.Errorf("walk: %w", err)
+	}
+	if len(files) == 0 {
+		return "", fmt.Errorf("no files to hash in %s", srcDir)
+	}
+	var sb strings.Builder
+	for _, f := range files {
+		fmt.Fprintf(&sb, "%s %s %s\n", f.Mode, f.ContentSHA256, f.RelPath)
+	}
+	sum := sha256.Sum256([]byte(sb.String()))
+	return hex.EncodeToString(sum[:]), nil
+}
+
 // sha256File reads the file at path and returns the lowercase hex SHA-256.
 func sha256File(path string) (string, error) {
 	f, err := os.Open(path)

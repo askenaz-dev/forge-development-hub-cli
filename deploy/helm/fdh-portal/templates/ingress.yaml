@@ -21,6 +21,16 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
+          # Wire protocol consumed by the fdh CLI's HTTPRegistry. Anonymous,
+          # cacheable, never goes through Next.js. Must come before /api so
+          # the prefix match doesn't fall through to the web service.
+          - path: /v1
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "fdh-portal.api.name" . }}
+                port:
+                  name: http
           - path: /api
             pathType: Prefix
             backend:
@@ -30,6 +40,34 @@ spec:
                   name: http
           - path: /metrics
             pathType: Prefix
+            backend:
+              service:
+                name: {{ include "fdh-portal.api.name" . }}
+                port:
+                  name: http
+          - path: /openapi.yaml
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "fdh-portal.api.name" . }}
+                port:
+                  name: http
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "fdh-portal.api.name" . }}
+                port:
+                  name: http
+          - path: /healthz
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "fdh-portal.api.name" . }}
+                port:
+                  name: http
+          - path: /readyz
+            pathType: Exact
             backend:
               service:
                 name: {{ include "fdh-portal.api.name" . }}

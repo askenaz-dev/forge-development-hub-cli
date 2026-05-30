@@ -120,6 +120,18 @@ body
 	assert.Empty(t, findings)
 }
 
+func TestLint_PortableVersionAllowed(t *testing.T) {
+	b := mkBundle(t, "versioned", `---
+name: versioned
+description: portable with a SemVer version
+version: 0.1.0
+---
+body
+`)
+	findings := portability.Lint(b, portability.LintOptions{})
+	assert.Empty(t, findings)
+}
+
 func TestLint_ArgumentsInBodyRejected(t *testing.T) {
 	b := mkBundle(t, "argy", `---
 name: argy

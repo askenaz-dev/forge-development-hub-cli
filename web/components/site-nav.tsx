@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
+import { getTranslations } from "next-intl/server";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { LocaleSwitcher } from "@/components/locale-switcher";
@@ -7,10 +8,12 @@ import { LocaleSwitcher } from "@/components/locale-switcher";
 /**
  * SiteNav is the global navigation header used by every page.
  *
- * The component renders entirely server-side; the only client islands
- * are ThemeToggle and LocaleSwitcher.
+ * Renders server-side (the only client islands are ThemeToggle and
+ * LocaleSwitcher). The four primitive kinds each get a nav tab so the whole
+ * catalog is discoverable, not just skills.
  */
-export function SiteNav() {
+export async function SiteNav() {
+  const t = await getTranslations("nav");
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-14 items-center justify-between">
@@ -24,19 +27,28 @@ export function SiteNav() {
 
         <nav className="flex items-center gap-1 text-sm">
           <Button asChild variant="ghost" size="sm">
-            <Link href="/skills">Skills</Link>
+            <Link href="/skills">{t("skills")}</Link>
           </Button>
           <Button asChild variant="ghost" size="sm">
-            <Link href="/install">Install CLI</Link>
+            <Link href="/rules">{t("rules")}</Link>
           </Button>
           <Button asChild variant="ghost" size="sm">
-            <Link href="/onboarding">Get started</Link>
+            <Link href="/agents">{t("agents")}</Link>
+          </Button>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/hooks">{t("hooks")}</Link>
           </Button>
           <span className="mx-2 hidden h-6 w-px bg-border md:inline-block" />
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/install">{t("install")}</Link>
+          </Button>
+          <Button asChild variant="ghost" size="sm">
+            <Link href="/onboarding">{t("getStarted")}</Link>
+          </Button>
           <LocaleSwitcher />
           <ThemeToggle />
           <Button asChild variant="default" size="sm" className="ml-1">
-            <Link href="/auth/signin">Sign in</Link>
+            <Link href="/auth/signin">{t("signIn")}</Link>
           </Button>
         </nav>
       </div>

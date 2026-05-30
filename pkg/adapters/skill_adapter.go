@@ -10,7 +10,13 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/forge/fdh/pkg/managed"
 )
+
+// time import retained for legacy callers; managed.Marker carries
+// the InstalledAt field directly.
+var _ = time.Time{}
 
 // SkillAdapter is the per-ecosystem strategy for materializing a
 // hub skill onto disk so the target AI agent reads it. There is
@@ -121,23 +127,21 @@ type InstallResult struct {
 }
 
 // SkillVersionMarker is the YAML shape recorded next to each
-// installed skill. The format is shared across all adapters so
-// `fdh update` can deserialize it uniformly.
+// installed component. Today it is a type alias for managed.Marker
+// (the canonical `.fdh-managed.yaml` shape) so adapter call sites
+// keep working without churn while consumers migrate.
 //
 // `content_hash` is recomputed at update time and compared to
 // detect local edits (drift detection).
-type SkillVersionMarker struct {
-	Name           string    `yaml:"name"`
-	HubVersion     string    `yaml:"hub_version"`
-	HubCommit      string    `yaml:"hub_commit"`
-	InstalledAt    time.Time `yaml:"installed_at"`
-	InstalledByFDH string    `yaml:"installed_by_fdh"`
-	ContentHash    string    `yaml:"content_hash"`
-	// Agent records which adapter wrote the marker. Useful for
-	// `fdh update` when scanning a directory that several agents
-	// might share.
-	Agent string `yaml:"agent"`
-}
+//
+// Deprecated: use managed.Marker directly in new code.
+type SkillVersionMarker = managed.Marker
+
+// HubVersionField is a small helper to read the legacy `HubVersion`
+// field by name — kept for tests that historically referenced
+// `m.HubVersion` directly. In the new shape, the same value lives in
+// `m.Version` (managed.Marker.Version).
+func HubVersionField(m SkillVersionMarker) string { return m.Version }
 
 // ComputeContentHash returns the SHA-256 of every regular file
 // under dir, LF-normalised before hashing.
@@ -196,11 +200,11 @@ func ComputeContentHash(dir string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// isMarker reports whether name is one of the per-skill marker
-// files written by adapters. Excluded from content-hash so
-// re-installs are idempotent.
+// isMarker reports whether name is one of the per-component marker
+// files written by adapters (both new and legacy forms). Excluded
+// from content-hash so re-installs are idempotent.
 func isMarker(name string) bool {
-	return name == ".skill-version" || strings.HasPrefix(name, ".skill-version-")
+	return managed.IsAnyMarkerFilename(name)
 }
 
 // normaliseLF rewrites CRLF and lone CR into LF so the hash is

@@ -27,6 +27,7 @@ var PortableAllowlist = map[string]struct{}{
 	"compatibility":  {},
 	"portable":       {},
 	"installed_from": {},
+	"version":        {},
 }
 
 // Finding records one rule failure.

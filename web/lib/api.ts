@@ -169,3 +169,110 @@ export async function getSkillMarkdown(
 export async function getCurrentUser(opts?: FetchOptions): Promise<UserIdentity> {
   return getJSON<UserIdentity>("/api/v1/auth/me", opts);
 }
+
+// --- Components (kind-aware catalog) ---
+//
+// The hub publishes four primitive kinds. `/api/v1/components` is the
+// kind-aware catalog; `/api/v1/skills` (above) is its kind=skill view,
+// retained for backward compatibility.
+
+export type Kind = "skill" | "rule" | "agent" | "hook";
+
+export interface ComponentSummary {
+  kind: Kind;
+  namespace: string;
+  name: string;
+  description?: string;
+  owner_team?: string;
+  tags?: string[];
+  latest_version: string;
+  latest_hash: string;
+  scan_status: "pass" | "warn" | "fail" | "none";
+}
+
+export interface ComponentVersion {
+  version: string;
+  content_hash: string;
+  published_at: string;
+  published_by?: string;
+  scan_status: "pass" | "warn" | "fail" | "none";
+  signature?: string;
+  document_url: string;
+}
+
+export interface ComponentManifest {
+  kind: Kind;
+  namespace: string;
+  name: string;
+  description: string;
+  owner_team?: string;
+  tags?: string[];
+  latest: string;
+  versions: ComponentVersion[];
+}
+
+export interface ComponentsPage {
+  items: ComponentSummary[];
+  next_cursor: string | null;
+}
+
+export interface ListComponentsParams {
+  kind?: Kind;
+  q?: string;
+  namespace?: string;
+  tag?: string;
+  scan_status?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export async function listComponents(
+  params: ListComponentsParams = {},
+  opts?: FetchOptions
+): Promise<ComponentsPage> {
+  const q = new URLSearchParams();
+  if (params.kind) q.set("kind", params.kind);
+  if (params.q) q.set("q", params.q);
+  if (params.namespace) q.set("namespace", params.namespace);
+  if (params.tag) q.set("tag", params.tag);
+  if (params.scan_status) q.set("scan_status", params.scan_status);
+  if (params.limit) q.set("limit", String(params.limit));
+  if (params.cursor) q.set("cursor", params.cursor);
+  const query = q.toString();
+  return getJSON<ComponentsPage>(`/api/v1/components${query ? `?${query}` : ""}`, opts);
+}
+
+export async function getComponent(
+  kind: Kind,
+  namespace: string,
+  name: string,
+  opts?: FetchOptions
+): Promise<ComponentManifest> {
+  return getJSON<ComponentManifest>(`/api/v1/components/${kind}/${namespace}/${name}`, opts);
+}
+
+export async function getComponentVersion(
+  kind: Kind,
+  namespace: string,
+  name: string,
+  version: string,
+  opts?: FetchOptions
+): Promise<ComponentVersion> {
+  return getJSON<ComponentVersion>(
+    `/api/v1/components/${kind}/${namespace}/${name}/versions/${version}`,
+    opts
+  );
+}
+
+export async function getComponentDocument(
+  kind: Kind,
+  namespace: string,
+  name: string,
+  version: string,
+  opts?: FetchOptions
+): Promise<string> {
+  return getText(
+    `/api/v1/components/${kind}/${namespace}/${name}/versions/${version}/document`,
+    opts
+  );
+}

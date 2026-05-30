@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -17,22 +16,19 @@ import (
 	"github.com/forge/fdh/internal/testutil"
 )
 
+// newTestServer wires a Server whose human API serves the real hub catalog
+// (FDH_PORTAL_HUB_PATH) — the same source the wire endpoints use. The hub
+// fixture publishes two skills (under the "dx-platform" namespace sentinel) plus a
+// rule, so the skills endpoints stay skill-scoped while exercising real data.
 func newTestServer(t *testing.T) (*portalapi.Server, http.Handler) {
 	t.Helper()
 	root := t.TempDir()
-	testutil.BuildRegistry(t, root, []testutil.SkillSpec{
-		{
-			Namespace: "code-review", Name: "checklist", Version: "1.0.0",
-			Description: "review checklist", OwnerTeam: "dx", Tags: []string{"review"},
-			Files: map[string]string{"SKILL.md": testutil.FixtureSKILLMD("checklist", "review checklist")},
-		},
-		{
-			Namespace: "security", Name: "owasp", Version: "1.2.0",
-			Description: "owasp sweep", OwnerTeam: "appsec", Tags: []string{"owasp", "security"},
-			Files: map[string]string{"SKILL.md": testutil.FixtureSKILLMD("owasp", "owasp sweep")},
-		},
+	testutil.BuildHubFixture(t, root, []testutil.HubComponentSpec{
+		{Kind: "skill", Name: "checklist", Version: "1.0.0", Description: "review checklist", OwnerTeam: "dx-platform", Tags: []string{"review"}},
+		{Kind: "skill", Name: "owasp", Version: "1.2.0", Description: "owasp sweep", OwnerTeam: "dx-platform", Tags: []string{"owasp", "security"}},
+		{Kind: "rule", Name: "no-console", Version: "0.2.0", Description: "no console logging", OwnerTeam: "dx-platform", Tags: []string{"quality"}},
 	})
-	t.Setenv("FDH_PORTAL_REGISTRY_LOCAL_PATH", root)
+	t.Setenv("FDH_PORTAL_HUB_PATH", root)
 	t.Setenv("FDH_PORTAL_REFRESH_INTERVAL", "60s")
 
 	cfg, err := portalapi.LoadConfig()
@@ -74,7 +70,7 @@ func TestListSkills_AllItems(t *testing.T) {
 
 	body := decode[map[string]any](t, w.Body)
 	items, _ := body["items"].([]any)
-	assert.Len(t, items, 2)
+	assert.Len(t, items, 2, "only the two skill components, not the rule")
 }
 
 func TestListSkills_FilterByQuery(t *testing.T) {
@@ -92,13 +88,14 @@ func TestListSkills_FilterByQuery(t *testing.T) {
 func TestListSkills_FilterByNamespace(t *testing.T) {
 	_, h := newTestServer(t)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills?namespace=security", nil))
+	// Hub components share the "dx-platform" namespace sentinel.
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills?namespace=dx-platform", nil))
 	require.Equal(t, http.StatusOK, w.Code)
 	body := decode[map[string]any](t, w.Body)
 	items, _ := body["items"].([]any)
-	require.Len(t, items, 1)
+	require.Len(t, items, 2)
 	first := items[0].(map[string]any)
-	assert.Equal(t, "security", first["namespace"])
+	assert.Equal(t, "dx-platform", first["namespace"])
 }
 
 func TestListSkills_Pagination(t *testing.T) {
@@ -127,10 +124,11 @@ func TestListSkills_Pagination(t *testing.T) {
 func TestGetSkill(t *testing.T) {
 	_, h := newTestServer(t)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills/security/owasp", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills/dx-platform/owasp", nil))
 	require.Equal(t, http.StatusOK, w.Code)
 	body := decode[map[string]any](t, w.Body)
 	assert.Equal(t, "owasp", body["name"])
+	assert.Equal(t, "dx-platform", body["namespace"])
 	assert.Equal(t, "1.2.0", body["latest"])
 	versions, _ := body["versions"].([]any)
 	require.Len(t, versions, 1)
@@ -139,14 +137,22 @@ func TestGetSkill(t *testing.T) {
 func TestGetSkill_NotFound(t *testing.T) {
 	_, h := newTestServer(t)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills/no/such", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills/dx-platform/no-such", nil))
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestGetSkill_WrongNamespace(t *testing.T) {
+	_, h := newTestServer(t)
+	w := httptest.NewRecorder()
+	// A non-forge namespace never resolves under the sentinel scheme.
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills/security/owasp", nil))
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestGetSkillVersion(t *testing.T) {
 	_, h := newTestServer(t)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills/security/owasp/versions/1.2.0", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills/dx-platform/owasp/versions/1.2.0", nil))
 	require.Equal(t, http.StatusOK, w.Code)
 	body := decode[map[string]any](t, w.Body)
 	assert.Equal(t, "1.2.0", body["version"])
@@ -156,7 +162,7 @@ func TestGetSkillVersion(t *testing.T) {
 func TestGetSkillMarkdown(t *testing.T) {
 	_, h := newTestServer(t)
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills/security/owasp/versions/1.2.0/skill-md", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills/dx-platform/owasp/versions/1.2.0/skill-md", nil))
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "text/markdown; charset=utf-8", w.Header().Get("Content-Type"))
 	assert.Contains(t, w.Body.String(), "name: owasp")
@@ -182,6 +188,7 @@ func TestRefresh_NoAuthAllowed(t *testing.T) {
 	body := decode[map[string]any](t, w.Body)
 	assert.Contains(t, body, "refreshed_at")
 	assert.Equal(t, float64(2), body["skill_count"])
+	assert.Equal(t, float64(3), body["component_count"])
 }
 
 func TestOpenAPISpec_Embedded(t *testing.T) {
@@ -194,45 +201,37 @@ func TestOpenAPISpec_Embedded(t *testing.T) {
 }
 
 func TestRefreshLoop_PicksUpChanges(t *testing.T) {
-	// Build a fresh registry and a server pointed at it. Mutate the
-	// registry on disk, call Refresh, and confirm the listing changes.
-	srv, h := newTestServer(t)
+	// Build a hub fixture, then add a third skill to the same root and confirm
+	// a refresh picks it up.
+	root := t.TempDir()
+	base := []testutil.HubComponentSpec{
+		{Kind: "skill", Name: "checklist", Version: "1.0.0", Description: "review checklist", OwnerTeam: "dx-platform"},
+		{Kind: "skill", Name: "owasp", Version: "1.2.0", Description: "owasp sweep", OwnerTeam: "dx-platform"},
+	}
+	testutil.BuildHubFixture(t, root, base)
+	t.Setenv("FDH_PORTAL_HUB_PATH", root)
+	t.Setenv("FDH_PORTAL_REFRESH_INTERVAL", "60s")
+
+	cfg, err := portalapi.LoadConfig()
+	require.NoError(t, err)
+	srv, err := portalapi.New(cfg, portalapi.BuildInfo{Version: "test"})
+	require.NoError(t, err)
+	require.NoError(t, srv.Refresh(context.Background()))
+	h := srv.Handler()
+
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/skills", nil))
-	body := decode[map[string]any](t, w.Body)
-	items, _ := body["items"].([]any)
+	items, _ := decode[map[string]any](t, w.Body)["items"].([]any)
 	require.Len(t, items, 2)
 
-	// Add a third skill to the same registry root.
-	root := getRegistryRoot(srv)
-	testutil.BuildRegistry(t, root, []testutil.SkillSpec{
-		{
-			Namespace: "code-review", Name: "checklist", Version: "1.0.0",
-			Description: "review checklist", OwnerTeam: "dx",
-			Files: map[string]string{"SKILL.md": testutil.FixtureSKILLMD("checklist", "review checklist")},
-		},
-		{
-			Namespace: "security", Name: "owasp", Version: "1.2.0",
-			Description: "owasp sweep", OwnerTeam: "appsec",
-			Files: map[string]string{"SKILL.md": testutil.FixtureSKILLMD("owasp", "owasp sweep")},
-		},
-		{
-			Namespace: "testing", Name: "unit", Version: "1.0.0",
-			Description: "unit test generation", OwnerTeam: "qa",
-			Files: map[string]string{"SKILL.md": testutil.FixtureSKILLMD("unit", "unit test generation")},
-		},
-	})
+	// Add a third skill and refresh.
+	testutil.BuildHubFixture(t, root, append(base,
+		testutil.HubComponentSpec{Kind: "skill", Name: "unit", Version: "1.0.0", Description: "unit test generation", OwnerTeam: "dx-platform"},
+	))
 	require.NoError(t, srv.Refresh(context.Background()))
 
 	w2 := httptest.NewRecorder()
 	h.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/api/v1/skills", nil))
-	body2 := decode[map[string]any](t, w2.Body)
-	items2, _ := body2["items"].([]any)
+	items2, _ := decode[map[string]any](t, w2.Body)["items"].([]any)
 	assert.Len(t, items2, 3, "third skill should appear after refresh")
-}
-
-// getRegistryRoot returns the registry path the test wired via t.Setenv.
-func getRegistryRoot(srv *portalapi.Server) string {
-	_ = srv
-	return os.Getenv("FDH_PORTAL_REGISTRY_LOCAL_PATH")
 }

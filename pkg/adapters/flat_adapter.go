@@ -2,7 +2,10 @@ package adapters
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+
+	"github.com/forge/fdh/pkg/managed"
 )
 
 // CopilotAdapter installs a skill as a flat `.prompt.md` file. GitHub
@@ -92,8 +95,19 @@ func flatInstall(agent, srcDir string, opts InstallOpts, tp targetPathFn) (Insta
 		return InstallResult{}, fmt.Errorf("hash source: %w", err)
 	}
 
-	markerName := MarkerName(agent, opts.SkillName)
-	markerPath := filepath.Join(filepath.Dir(target), markerName)
+	dir := filepath.Dir(target)
+	basename := filepath.Base(target)
+
+	// Migrate legacy `.skill-version-<name>` sibling if present.
+	legacyPath := filepath.Join(dir, ".skill-version-"+opts.SkillName)
+	if _, statErr := os.Stat(legacyPath); statErr == nil {
+		if _, _, mErr := managed.Migrate(legacyPath); mErr != nil {
+			return InstallResult{}, fmt.Errorf("migrate legacy marker: %w", mErr)
+		}
+	}
+
+	markerName := managed.FilenameFor(basename, true)
+	markerPath := filepath.Join(dir, markerName)
 
 	result := InstallResult{
 		Agent:       agent,
@@ -107,7 +121,7 @@ func flatInstall(agent, srcDir string, opts InstallOpts, tp targetPathFn) (Insta
 			fmt.Sprintf("skill %s has subresources that are not portable to %s — only SKILL.md was installed", opts.SkillName, agent))
 	}
 
-	if existing, err := LoadMarker(markerPath); err == nil && existing.ContentHash == hash && !opts.Overwrite {
+	if existing, err := managed.Read(markerPath); err == nil && existing.ContentHash == hash && !opts.Overwrite {
 		result.Skipped = true
 		return result, nil
 	}
@@ -119,20 +133,18 @@ func flatInstall(agent, srcDir string, opts InstallOpts, tp targetPathFn) (Insta
 	}
 	result.FilesWritten = []string{filepath.Base(target)}
 
-	marker := SkillVersionMarker{
+	marker := managed.Marker{
 		Name:           opts.SkillName,
-		HubVersion:     opts.HubVersion,
+		Kind:           managed.KindSkill,
+		Version:        opts.HubVersion,
 		HubCommit:      opts.HubCommit,
 		InstalledByFDH: opts.InstalledByFDH,
+		SourcePath:     "skills/" + opts.SkillName,
 		ContentHash:    hash,
 		Agent:          agent,
 	}
-	markerBody, err := MarshalMarker(marker)
-	if err != nil {
-		return result, err
-	}
 	if !opts.DryRun {
-		if err := writeFileAtomic(markerPath, markerBody, 0o644); err != nil {
+		if _, err := managed.Write(dir, basename, marker, true); err != nil {
 			return result, fmt.Errorf("write marker: %w", err)
 		}
 	}

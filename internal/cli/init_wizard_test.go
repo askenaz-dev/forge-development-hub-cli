@@ -261,9 +261,9 @@ func TestHubURLFromConfigOrFlag_NilRegistry(t *testing.T) {
 }
 
 func TestSplitDefaultsAndExtras_AgentFilter(t *testing.T) {
-	all := []hubregistry.SkillEntry{
-		{Name: "a", Default: true, AgentsSupported: []string{"claude-code"}},
-		{Name: "b", Default: false, AgentsSupported: []string{"copilot"}},
+	all := []hubregistry.ComponentEntry{
+		{Name: "a", Kind: hubregistry.KindSkill, Default: true, AgentsSupported: []string{"claude-code"}},
+		{Name: "b", Kind: hubregistry.KindSkill, Default: false, AgentsSupported: []string{"copilot"}},
 	}
 	defaults, extras := splitDefaultsAndExtras(all, []string{"claude-code"})
 	require.Len(t, defaults, 1)
@@ -272,8 +272,8 @@ func TestSplitDefaultsAndExtras_AgentFilter(t *testing.T) {
 }
 
 func TestResolveSkillSelection_StripsPlusAndFlagsUnknown(t *testing.T) {
-	catalog := []hubregistry.SkillEntry{
-		{Name: "x"}, {Name: "y"},
+	catalog := []hubregistry.ComponentEntry{
+		{Name: "x", Kind: hubregistry.KindSkill}, {Name: "y", Kind: hubregistry.KindSkill},
 	}
 	valid, unknown := resolveSkillSelection([]string{"+x", "z"}, catalog)
 	assert.Equal(t, []string{"x"}, valid)

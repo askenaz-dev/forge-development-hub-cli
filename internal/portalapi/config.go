@@ -45,6 +45,14 @@ type Config struct {
 
 	// OTLPEndpoint is the OTel collector endpoint for trace export.
 	OTLPEndpoint string
+
+	// HubPath is the absolute filesystem path where the hub catalog is
+	// mounted (typically kept fresh by a git-sync sidecar). It is the source
+	// of truth for the HTTP wire endpoints under /v1/*. Default "/srv/hub".
+	// When the path does not exist or does not contain hub/registry.yaml,
+	// the wire handlers respond 503 Service Unavailable; the rest of the
+	// portal (UI endpoints, /healthz) continues to function.
+	HubPath string
 }
 
 // LoadConfig builds a Config from environment variables, applying defaults
@@ -60,11 +68,12 @@ func LoadConfig() (Config, error) {
 		OIDCClientID:      os.Getenv("OIDC_CLIENT_ID"),
 		OIDCRoleMapPath:   os.Getenv("OIDC_ROLE_MAP_PATH"),
 		OTLPEndpoint:      os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+		HubPath:           envOr("FDH_PORTAL_HUB_PATH", "/srv/hub"),
 	}
 
-	if cfg.RegistryLocalPath == "" && cfg.RegistryURL == "" {
-		return cfg, fmt.Errorf("at least one of FDH_PORTAL_REGISTRY_LOCAL_PATH or FDH_PORTAL_REGISTRY_URL must be set")
-	}
+	// The portal serves its catalog from the hub content at HubPath. The
+	// legacy RegistryLocalPath/RegistryURL fields are optional (kept for the
+	// CLI consumer and diagnostics) and no longer gate startup.
 
 	intervalStr := envOr("FDH_PORTAL_REFRESH_INTERVAL", "60s")
 	dur, err := time.ParseDuration(intervalStr)

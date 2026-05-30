@@ -1,0 +1,43 @@
+schema_version: 2
+hub_version: "2026.05-fixture"
+
+components:
+  - name: test-skill
+    kind: skill
+    description: Fixture skill for portal-api wire protocol tests.
+    owner_team: dx-platform
+    tags: [test, fixture]
+    default: false
+    min_fdh_version: "0.4.0"
+    agents_supported: [claude-code]
+    path: skills/test-skill
+
+  - name: test-rule
+    kind: rule
+    description: Fixture rule for portal-api wire protocol tests.
+    owner_team: dx-platform
+    tags: [test, fixture]
+    default: false
+    min_fdh_version: "0.4.0"
+    agents_supported: [claude-code]
+    path: rules/test-rule
+
+  - name: test-agent
+    kind: agent
+    description: Fixture agent for portal-api wire protocol tests.
+    owner_team: dx-platform
+    tags: [test, fixture]
+    default: false
+    min_fdh_version: "0.4.0"
+    agents_supported: [claude-code]
+    path: agents/test-agent
+
+  - name: test-hook
+    kind: hook
+    description: Fixture hook for portal-api wire protocol tests.
+    owner_team: dx-platform
+    tags: [test, fixture]
+    default: false
+    min_fdh_version: "0.4.0"
+    agents_supported: [claude-code]
+    path: hooks/test-hook

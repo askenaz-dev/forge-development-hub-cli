@@ -15,22 +15,27 @@ import (
 
 	"github.com/forge/fdh/pkg/adapters"
 	"github.com/forge/fdh/pkg/bundle"
+	"github.com/forge/fdh/pkg/gitignore"
+	"github.com/forge/fdh/pkg/managed"
 	"github.com/forge/fdh/pkg/portability"
 	"github.com/forge/fdh/pkg/provenance"
 	"github.com/forge/fdh/pkg/registry"
+	"github.com/forge/fdh/pkg/signing"
 )
 
 // InstallResult is the JSON shape emitted by `install --json`.
 type InstallResult struct {
-	Skill        string             `json:"skill"`
-	Namespace    string             `json:"namespace"`
-	Name         string             `json:"name"`
-	Version      string             `json:"version"`
-	ContentHash  string             `json:"content_hash"`
-	Scope        string             `json:"scope"`
-	Registry     string             `json:"registry"`
-	TargetAgents []string           `json:"target_agents"`
-	Writes       []InstallWriteInfo `json:"writes"`
+	Skill            string             `json:"skill"`
+	Namespace        string             `json:"namespace"`
+	Name             string             `json:"name"`
+	Version          string             `json:"version"`
+	ContentHash      string             `json:"content_hash"`
+	Scope            string             `json:"scope"`
+	Registry         string             `json:"registry"`
+	TargetAgents     []string           `json:"target_agents"`
+	Writes           []InstallWriteInfo `json:"writes"`
+	MarkerFilename   string             `json:"marker_filename,omitempty"`
+	GitignoreUpdated bool               `json:"gitignore_updated,omitempty"`
 }
 
 // InstallWriteInfo describes one written destination path.
@@ -41,16 +46,19 @@ type InstallWriteInfo struct {
 
 func newInstallCmd(info BuildInfo) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "install <skill>[@version]",
-		Short: "Install a skill from the registry",
+		Use:   "install [<skill>[@version]]",
+		Short: "Install a skill from the registry, or apply .fdh/manifest.yaml when no argument is given",
 		Long:  installHelp,
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runInstall(cmd, args, info)
 		},
 	}
 	cmd.Flags().StringSlice("agent", nil, "agent id to target (may be repeated). Default: every detected agent.")
 	cmd.Flags().String("scope", "auto", "install scope: user|project|auto")
+	cmd.Flags().Bool("frozen", false, "manifest-flow only: fail if the lock does not satisfy the manifest")
+	cmd.Flags().Bool("no-frozen", false, "manifest-flow only: opt out of CI auto-frozen behavior")
+	cmd.Flags().String("allow-yanked", "", "explicit escape hatch: install the named yanked version despite lifecycle exclusion")
 	return cmd
 }
 
@@ -74,6 +82,13 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 	if err != nil {
 		return err
 	}
+
+	// No argument: manifest-flow path. Reads .fdh/manifest.yaml,
+	// resolves against the hub catalog, materializes, writes lock.
+	if len(args) == 0 {
+		return runInstallManifest(cmd, rc, info)
+	}
+
 	if rc.Registry == nil {
 		return Errorf(ExitInvalidUsage, "no registry configured. Run 'fdh config set registry.local_path /path' or 'registry.url <git-url>' first.")
 	}
@@ -101,9 +116,27 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 	}
 	if version == "" {
 		version = manifest.Latest
+		// Walk down from latest to skip yanked versions when no
+		// explicit version was requested.
+		version = highestNonYanked(&manifest)
+		if version == "" {
+			return Errorf(ExitInvalidUsage, "no installable (non-yanked) versions for %s/%s", namespace, name)
+		}
 	}
-	if manifest.FindVersion(version) == nil {
+	verEntry := manifest.FindVersion(version)
+	if verEntry == nil {
 		return Errorf(ExitInvalidUsage, "version %s not found in manifest for %s/%s", version, namespace, name)
+	}
+	// Lifecycle enforcement.
+	allowYanked, _ := cmd.Flags().GetString("allow-yanked")
+	if verEntry.IsYanked() && allowYanked != version {
+		return Errorf(ExitInvalidUsage, "version %s of %s/%s is YANKED. Pass --allow-yanked %s to install anyway (NOT recommended).", version, namespace, name, version)
+	}
+	if verEntry.IsDeprecated() {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s/%s@%s is deprecated; consider migrating to a newer version\n", namespace, name, version)
+	}
+	if verEntry.IsYanked() {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: installing YANKED version %s/%s@%s under --allow-yanked escape hatch\n", namespace, name, version)
 	}
 
 	// Fetch and hash-verify the bundle.
@@ -116,6 +149,19 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 		return Wrap(ExitGenericFailure, err)
 	}
 	defer bp.Cleanup()
+
+	// Verify the version's signature (capability bundle-signing). The signature
+	// (a cosign bundle) travels in the manifest's reserved `signature` field and
+	// attests the canonical content_hash. Verification shells out to cosign when
+	// available; FDH_REQUIRE_SIGNATURES makes a verifiable signature mandatory.
+	sigField := ""
+	if ver := manifest.FindVersion(version); ver != nil {
+		sigField = ver.Signature
+	}
+	signer, sigErr := signing.Check(rc.Ctx, signing.PolicyFromEnv(), bp.Hash, sigField, signing.CosignVerifierFromEnv())
+	if sigErr != nil {
+		return Wrap(ExitGenericFailure, fmt.Errorf("signature check for %s/%s@%s: %w", namespace, name, version, sigErr))
+	}
 
 	// Load the bundle, validate, lint.
 	b, err := bundle.Load(bp.Path)
@@ -175,7 +221,7 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 			}
 			return Wrap(ExitGenericFailure, fmt.Errorf("write to %s: %w", p.Path, err))
 		}
-		// Write sidecar.
+		// Write provenance sidecar (skill-meta.yaml — supply-chain lineage).
 		meta := provenance.SkillMeta{
 			Registry:         registryDisplay,
 			Namespace:        namespace,
@@ -187,29 +233,162 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 			Scope:            string(scope),
 			Path:             p.Path,
 			InstallerVersion: info.Version,
+			Signature:        signer,
 		}
 		if err := provenance.WriteSidecar(p.Path, meta); err != nil {
 			return Wrap(ExitGenericFailure, fmt.Errorf("write sidecar: %w", err))
 		}
+		// Write managed-paths marker (.fdh-managed.yaml — ownership).
+		marker := managed.Marker{
+			Name:           name,
+			Kind:           managed.KindSkill,
+			Version:        version,
+			HubCommit:      "", // single-skill install doesn't know the hub commit
+			InstalledByFDH: info.Version,
+			SourcePath:     "skills/" + name,
+			ContentHash:    bp.Hash,
+		}
+		if _, mErr := managed.Write(p.Path, "", marker, false); mErr != nil {
+			if errors.Is(mErr, os.ErrPermission) {
+				return Wrap(ExitPermission, fmt.Errorf("write marker to %s: %w", p.Path, mErr))
+			}
+			return Wrap(ExitGenericFailure, fmt.Errorf("write marker to %s: %w", p.Path, mErr))
+		}
 		writes = append(writes, InstallWriteInfo{Path: p.Path, Agents: p.Agents})
 	}
 
+	// Update the consumer's .gitignore managed block at project scope.
+	gitignoreUpdated := false
+	if scope == adapters.ScopeProject && rc.ProjectRoot != "" {
+		managedPaths := collectManagedPathsForGitignore(rc.ProjectRoot, writes)
+		if err := gitignore.Apply(rc.ProjectRoot, managedPaths); err != nil {
+			if errors.Is(err, os.ErrPermission) {
+				return Wrap(ExitPermission, fmt.Errorf("update .gitignore: %w", err))
+			}
+			return Wrap(ExitGenericFailure, fmt.Errorf("update .gitignore: %w", err))
+		}
+		gitignoreUpdated = true
+	}
+
 	result := InstallResult{
-		Skill:        fmt.Sprintf("%s/%s", namespace, name),
-		Namespace:    namespace,
-		Name:         name,
-		Version:      version,
-		ContentHash:  bp.Hash,
-		Scope:        string(scope),
-		Registry:     registryDisplay,
-		TargetAgents: targets,
-		Writes:       writes,
+		Skill:            fmt.Sprintf("%s/%s", namespace, name),
+		Namespace:        namespace,
+		Name:             name,
+		Version:          version,
+		ContentHash:      bp.Hash,
+		Scope:            string(scope),
+		Registry:         registryDisplay,
+		TargetAgents:     targets,
+		Writes:           writes,
+		MarkerFilename:   managed.Filename,
+		GitignoreUpdated: gitignoreUpdated,
 	}
 
 	if outputMode(cmd) == "json" {
 		return emitJSON(cmd.OutOrStdout(), result)
 	}
 	return printInstallTable(cmd.OutOrStdout(), result)
+}
+
+// collectManagedPathsForGitignore returns the paths under projectRoot
+// that should be listed in the managed `.gitignore` section.
+// Includes the path(s) we just wrote plus any other markers that
+// already exist on disk so an install never "drops" siblings.
+func collectManagedPathsForGitignore(projectRoot string, writes []InstallWriteInfo) []string {
+	seen := map[string]struct{}{}
+	for _, w := range writes {
+		if rel, ok := relProject(projectRoot, w.Path); ok {
+			seen[rel] = struct{}{}
+		}
+	}
+	// Walk known agent install roots looking for existing markers.
+	for _, dir := range knownProjectInstallDirs(projectRoot) {
+		_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return nil
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if !managed.IsAnyMarkerFilename(d.Name()) {
+				return nil
+			}
+			// For directory-based markers (.fdh-managed.yaml), the
+			// managed path is the marker's parent directory.
+			// For flat markers (<basename>.fdh-managed.yaml), the
+			// managed path is the materialized file (the basename).
+			var target string
+			if d.Name() == managed.Filename || d.Name() == ".skill-version" {
+				target = filepath.Dir(p)
+			} else {
+				// Strip the suffix to get the basename.
+				target = strings.TrimSuffix(p, ".fdh-managed.yaml")
+				if target == p {
+					// Legacy `.skill-version-<name>` sibling.
+					target = filepath.Join(filepath.Dir(p),
+						strings.TrimPrefix(d.Name(), ".skill-version-"))
+				}
+			}
+			if rel, ok := relProject(projectRoot, target); ok {
+				seen[rel] = struct{}{}
+			}
+			return nil
+		})
+	}
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func relProject(root, abs string) (string, bool) {
+	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		return "", false
+	}
+	rel = filepath.ToSlash(rel)
+	if strings.HasPrefix(rel, "..") {
+		return "", false
+	}
+	// Append trailing slash for directory paths so gitignore matches
+	// only that directory's contents.
+	if info, statErr := os.Stat(abs); statErr == nil && info.IsDir() {
+		if !strings.HasSuffix(rel, "/") {
+			rel += "/"
+		}
+	}
+	return rel, true
+}
+
+func knownProjectInstallDirs(projectRoot string) []string {
+	return []string{
+		filepath.Join(projectRoot, ".claude"),
+		filepath.Join(projectRoot, ".codex"),
+		filepath.Join(projectRoot, ".github"),
+		filepath.Join(projectRoot, ".opencode"),
+	}
+}
+
+// highestNonYanked walks the manifest's versions and returns the
+// highest one whose Status is not "yanked". Falls back to
+// manifest.Latest when no versions[] entry is non-yanked (caller will
+// then error). Pure best-effort: uses string comparison on version
+// fields if SemVer parsing isn't necessary for the simple "find one
+// non-yanked" case.
+func highestNonYanked(m *registry.Manifest) string {
+	// First try Latest if non-yanked.
+	if v := m.FindVersion(m.Latest); v != nil && !v.IsYanked() {
+		return m.Latest
+	}
+	// Walk versions in reverse (assumed appended in order).
+	for i := len(m.Versions) - 1; i >= 0; i-- {
+		if !m.Versions[i].IsYanked() {
+			return m.Versions[i].Version
+		}
+	}
+	return ""
 }
 
 func parseSkillRef(ref string) (namespace, name, version string, err error) {

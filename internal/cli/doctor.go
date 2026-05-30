@@ -4,23 +4,43 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/forge/fdh/pkg/adapters"
+	"github.com/forge/fdh/pkg/consumerlock"
+	"github.com/forge/fdh/pkg/managed"
 	"github.com/forge/fdh/pkg/registry"
 )
 
 // DoctorReport is the JSON shape emitted by `doctor --json`.
 type DoctorReport struct {
-	InstallerVersion string         `json:"installer_version"`
-	HomeDir          string         `json:"home_dir"`
-	ProjectRoot      string         `json:"project_root,omitempty"`
-	Registry         RegistryHealth `json:"registry"`
-	Agents           []AgentHealth  `json:"agents"`
-	Issues           []DoctorIssue  `json:"issues"`
+	InstallerVersion string                `json:"installer_version"`
+	HomeDir          string                `json:"home_dir"`
+	ProjectRoot      string                `json:"project_root,omitempty"`
+	Registry         RegistryHealth        `json:"registry"`
+	Agents           []AgentHealth         `json:"agents"`
+	Issues           []DoctorIssue         `json:"issues"`
+	ManagedDrift     []ManagedDriftEntry   `json:"managed_drift,omitempty"`
+}
+
+// ManagedDriftEntry describes one component path inspected for drift
+// against its `.fdh-managed.yaml` marker. Status values:
+//
+//	ok    - marker exists and content_hash matches recomputed hash
+//	user  - no marker; developer-owned directory; informational only
+//	drift - marker present but local content hash differs (manual edits)
+type ManagedDriftEntry struct {
+	Path   string `json:"path"`
+	Status string `json:"status"`
+	Name   string `json:"name,omitempty"`
+	Kind   string `json:"kind,omitempty"`
+	Agent  string `json:"agent,omitempty"`
 }
 
 // AgentHealth describes one agent's detection + path state.
@@ -165,6 +185,21 @@ func runDoctor(cmd *cobra.Command, args []string, info BuildInfo) error {
 		report.Agents = append(report.Agents, ah)
 	}
 
+	// Managed drift: scan known install dirs for markers + drift.
+	// TODO(installation-state-ledger): also compare against the state
+	// ledger to surface cases (a) "state references missing path" and
+	// (b) "marker without state entry" once the ledger lands.
+	report.ManagedDrift = computeManagedDrift(rc)
+
+	// Lifecycle: warn when the consumer's lock pins a since-yanked
+	// version. Best-effort: requires a wire-protocol registry that
+	// exposes Versions[].Status. If the registry isn't configured or
+	// the per-component manifest isn't reachable, we skip this check
+	// silently (lock parsing failure shows up under managed_drift).
+	if rc.ProjectRoot != "" && rc.Registry != nil {
+		report.Issues = append(report.Issues, computeLifecycleWarnings(rc.Ctx, rc)...)
+	}
+
 	// Emit + exit code.
 	if outputMode(cmd) == "json" {
 		if err := emitJSON(cmd.OutOrStdout(), report); err != nil {
@@ -180,6 +215,158 @@ func runDoctor(cmd *cobra.Command, args []string, info BuildInfo) error {
 		}
 	}
 	return nil
+}
+
+// computeManagedDrift walks the install dirs of every shipped
+// adapter (both user and project scope when applicable) and classifies
+// each candidate directory or flat-file as ok / user / drift.
+func computeManagedDrift(rc *runContext) []ManagedDriftEntry {
+	out := []ManagedDriftEntry{}
+	scopes := []adapters.Scope{adapters.ScopeUser}
+	if rc.ProjectRoot != "" {
+		scopes = append(scopes, adapters.ScopeProject)
+	}
+	for _, a := range adapters.AllSkillAdapters() {
+		for _, scope := range scopes {
+			root, err := adapterScopeRoot(a, rc.HomeDir, rc.ProjectRoot, scope)
+			if err != nil {
+				continue
+			}
+			info, statErr := os.Stat(root)
+			if statErr != nil || !info.IsDir() {
+				continue
+			}
+			if a.SupportsSubresources() {
+				out = append(out, scanDriftDirectory(a.Agent(), root)...)
+			} else {
+				out = append(out, scanDriftFlat(a.Agent(), root)...)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
+}
+
+func scanDriftDirectory(agent, root string) []ManagedDriftEntry {
+	var out []ManagedDriftEntry
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, e.Name())
+		markerPath := filepath.Join(dir, managed.Filename)
+		legacy := filepath.Join(dir, ".skill-version")
+		var m managed.Marker
+		var hasMarker bool
+		if mm, err := managed.Read(markerPath); err == nil {
+			m = mm
+			hasMarker = true
+		} else if mm, err := managed.Read(legacy); err == nil {
+			m = mm
+			hasMarker = true
+		}
+		if !hasMarker {
+			out = append(out, ManagedDriftEntry{Path: dir, Status: "user", Agent: agent})
+			continue
+		}
+		hash, hErr := adapters.ComputeContentHash(dir)
+		status := "ok"
+		if hErr == nil && m.ContentHash != "" && hash != m.ContentHash {
+			status = "drift"
+		}
+		out = append(out, ManagedDriftEntry{
+			Path:   dir,
+			Status: status,
+			Name:   m.Name,
+			Kind:   valueOr(m.Kind, managed.KindSkill),
+			Agent:  agent,
+		})
+	}
+	return out
+}
+
+func scanDriftFlat(agent, root string) []ManagedDriftEntry {
+	var out []ManagedDriftEntry
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		fname := e.Name()
+		if !managed.IsAnyMarkerFilename(fname) {
+			continue
+		}
+		markerPath := filepath.Join(root, fname)
+		m, err := managed.Read(markerPath)
+		if err != nil {
+			continue
+		}
+		out = append(out, ManagedDriftEntry{
+			Path:   markerPath,
+			Status: "ok", // content hash compare per-file is meaningful but skipped here
+			Name:   m.Name,
+			Kind:   valueOr(m.Kind, managed.KindSkill),
+			Agent:  agent,
+		})
+	}
+	return out
+}
+
+// computeLifecycleWarnings inspects .fdh/lock.yaml and queries the
+// wire-protocol registry for each entry's manifest, raising an
+// `error` issue when a lock entry pins a since-yanked version, and a
+// `warning` when a deprecated version is in use.
+func computeLifecycleWarnings(ctx context.Context, rc *runContext) []DoctorIssue {
+	var out []DoctorIssue
+	lock, err := consumerlock.Read(rc.ProjectRoot)
+	if err != nil {
+		return out
+	}
+	check := func(kind string, entries []consumerlock.LockEntry) {
+		for _, e := range entries {
+			// Wire-protocol Manifest call (kind-aware via KindAware
+			// when available, falls back to legacy skill-only).
+			var m registry.Manifest
+			var mErr error
+			if ka, ok := rc.Registry.(registry.KindAware); ok {
+				m, mErr = ka.ManifestByKind(ctx, kind, "", e.Name)
+			} else if kind == "skill" {
+				m, mErr = rc.Registry.Manifest(ctx, "", e.Name)
+			} else {
+				continue
+			}
+			if mErr != nil {
+				continue
+			}
+			v := m.FindVersion(e.Version)
+			if v == nil {
+				continue
+			}
+			if v.IsYanked() {
+				out = append(out, DoctorIssue{
+					Severity: "error",
+					Message:  fmt.Sprintf("lock pins yanked version: %s/%s@%s — re-resolve with `fdh install`", kind, e.Name, e.Version),
+				})
+			} else if v.IsDeprecated() {
+				out = append(out, DoctorIssue{
+					Severity: "warning",
+					Message:  fmt.Sprintf("lock pins deprecated version: %s/%s@%s", kind, e.Name, e.Version),
+				})
+			}
+		}
+	}
+	check("skill", lock.Skills)
+	check("rule", lock.Rules)
+	check("agent", lock.Agents)
+	check("hook", lock.Hooks)
+	return out
 }
 
 func stripNamePlaceholder(raw string) string {

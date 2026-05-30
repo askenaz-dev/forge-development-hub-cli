@@ -54,6 +54,7 @@ func runUpdate(cmd *cobra.Command, _ []string, info BuildInfo) error {
 	skillFilter, _ := cmd.Flags().GetStringSlice("skill")
 	agentFilter, _ := cmd.Flags().GetStringSlice("agent")
 	force, _ := cmd.Flags().GetBool("force")
+	kindFilter, _ := cmd.Flags().GetString("kind")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -78,6 +79,26 @@ func runUpdate(cmd *cobra.Command, _ []string, info BuildInfo) error {
 	if len(installed) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "No installed skills found. Run `fdh init` first.")
 		return nil
+	}
+
+	// Apply kind filter on installed markers (skip non-skill kinds
+	// when caller passed --kind=skill, etc.).
+	if kindFilter != "" {
+		filtered := installed[:0]
+		for _, ins := range installed {
+			mKind := ins.Marker.Kind
+			if mKind == "" {
+				mKind = "skill"
+			}
+			if mKind == kindFilter {
+				filtered = append(filtered, ins)
+			}
+		}
+		installed = filtered
+		if len(installed) == 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "No installed components of kind %q.\n", kindFilter)
+			return nil
+		}
 	}
 
 	plan, err := planUpdates(ctx, installed,
@@ -181,7 +202,7 @@ func applyUpdate(
 	fdhVersion string,
 	dryRun bool,
 ) (adapters.InstallResult, error) {
-	entry := reg.SkillByName(skillName)
+	entry := reg.ComponentByName(skillName, hubregistry.KindSkill)
 	if entry == nil {
 		return adapters.InstallResult{}, fmt.Errorf("skill %s vanished from hub", skillName)
 	}
@@ -189,7 +210,7 @@ func applyUpdate(
 	if adapter == nil {
 		return adapters.InstallResult{}, fmt.Errorf("agent %s has no adapter", agentID)
 	}
-	srcDir, err := reg.FetchSkill(ctx, skillName)
+	srcDir, err := reg.FetchComponent(ctx, skillName, hubregistry.KindSkill)
 	if err != nil {
 		return adapters.InstallResult{}, err
 	}

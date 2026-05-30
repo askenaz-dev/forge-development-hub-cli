@@ -131,6 +131,218 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  # --- Component catalog (kind-aware; skills are the kind=skill view) --------
+  /components:
+    get:
+      operationId: listComponents
+      summary: List components across all four kinds
+      parameters:
+        - in: query
+          name: kind
+          schema: { type: string, enum: [skill, rule, agent, hook] }
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: namespace
+          schema: { type: string }
+        - in: query
+          name: tag
+          schema: { type: string }
+        - in: query
+          name: scan_status
+          schema: { type: string, enum: [pass, warn, fail, none] }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        "200":
+          description: Page of component summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComponentsPage"
+        "400":
+          $ref: "#/components/responses/NotFound"
+
+  /components/{kind}/{namespace}/{name}:
+    get:
+      operationId: getComponent
+      summary: Full manifest for one component
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+      responses:
+        "200":
+          description: Component manifest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComponentManifest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /components/{kind}/{namespace}/{name}/versions/{version}:
+    get:
+      operationId: getComponentVersion
+      summary: Metadata for one published component version
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+        - $ref: "#/components/parameters/Version"
+      responses:
+        "200":
+          description: Version metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComponentVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /components/{kind}/{namespace}/{name}/versions/{version}/document:
+    get:
+      operationId: getComponentDocument
+      summary: Raw entrypoint markdown (SKILL.md/RULE.md/AGENT.md/HOOK.md) of one version
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+        - $ref: "#/components/parameters/Version"
+      responses:
+        "200":
+          description: Entrypoint markdown body
+          content:
+            text/markdown:
+              schema: { type: string }
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # --- Wire-protocol endpoints ----------------------------------------------
+  # The contract for these endpoints lives in the `hub-http-registry`
+  # specification in forge-development-hub. Each path uses a per-path
+  # `servers:` override so the URL is rooted at "/" rather than the UI
+  # `/api/v1` prefix.
+  /v1/index.json:
+    servers:
+      - url: /
+        description: Wire-protocol root (consumed by pkg/registry.HTTPRegistry)
+    get:
+      operationId: getWireIndex
+      summary: Top-level catalog of skill components (wire protocol)
+      responses:
+        "200":
+          description: Catalog snapshot
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireIndex"
+        "304":
+          description: Not modified (If-None-Match matched current ETag)
+        "503":
+          description: Hub catalog not yet mounted on this pod
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireError"
+
+  /v1/{kindPlural}/{namespace}/{name}/manifest.json:
+    servers:
+      - url: /
+    get:
+      operationId: getWireManifest
+      summary: Per-component manifest (wire protocol)
+      parameters:
+        - $ref: "#/components/parameters/KindPlural"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+      responses:
+        "200":
+          description: Component manifest
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireManifest"
+        "304":
+          description: Not modified
+        "404":
+          description: Component or namespace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireError"
+
+  /v1/{kindPlural}/{namespace}/{name}/versions/{version}/bundle.tar.gz:
+    servers:
+      - url: /
+    get:
+      operationId: getWireBundleTarball
+      summary: Deterministic gzipped tarball of a component version
+      parameters:
+        - $ref: "#/components/parameters/KindPlural"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+        - $ref: "#/components/parameters/Version"
+      responses:
+        "200":
+          description: Gzipped tarball bytes (deterministic across builds)
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control:
+              schema: { type: string, default: "public, max-age=31536000, immutable" }
+          content:
+            application/gzip:
+              schema: { type: string, format: binary }
+        "304":
+          description: Not modified
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireError"
+
+  /v1/{kindPlural}/{namespace}/{name}/versions/{version}/bundle.sha256:
+    servers:
+      - url: /
+    get:
+      operationId: getWireBundleSidecar
+      summary: Canonical content-hash sidecar for the bundle
+      parameters:
+        - $ref: "#/components/parameters/KindPlural"
+        - $ref: "#/components/parameters/Namespace"
+        - $ref: "#/components/parameters/Name"
+        - $ref: "#/components/parameters/Version"
+      responses:
+        "200":
+          description: "Single line: <hex>  bundle.tar.gz\\n"
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control:
+              schema: { type: string, default: "public, max-age=31536000, immutable" }
+          content:
+            text/plain:
+              schema: { type: string }
+        "304":
+          description: Not modified
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WireError"
+
 components:
   parameters:
     Namespace:
@@ -148,6 +360,22 @@ components:
       name: version
       required: true
       schema: { type: string }
+    KindPlural:
+      in: path
+      name: kindPlural
+      required: true
+      description: Plural URL segment identifying the component kind.
+      schema:
+        type: string
+        enum: [skills, rules, agents, hooks]
+    Kind:
+      in: path
+      name: kind
+      required: true
+      description: Singular component kind.
+      schema:
+        type: string
+        enum: [skill, rule, agent, hook]
 
   responses:
     NotFound:
@@ -230,6 +458,61 @@ components:
         signature: { type: string }
         skill_md_url: { type: string, format: uri }
 
+    ComponentsPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ComponentSummary" }
+        next_cursor:
+          type: [string, "null"]
+
+    ComponentSummary:
+      type: object
+      required: [kind, namespace, name, latest_version, latest_hash, scan_status]
+      properties:
+        kind: { type: string, enum: [skill, rule, agent, hook] }
+        namespace: { type: string }
+        name: { type: string }
+        description: { type: string }
+        owner_team: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        latest_version: { type: string }
+        latest_hash: { type: string }
+        scan_status: { type: string, enum: [pass, warn, fail, none] }
+
+    ComponentManifest:
+      type: object
+      required: [kind, namespace, name, latest, versions]
+      properties:
+        kind: { type: string, enum: [skill, rule, agent, hook] }
+        namespace: { type: string }
+        name: { type: string }
+        description: { type: string }
+        owner_team: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        latest: { type: string }
+        versions:
+          type: array
+          items: { $ref: "#/components/schemas/ComponentVersion" }
+
+    ComponentVersion:
+      type: object
+      required: [version, content_hash, published_at, scan_status]
+      properties:
+        version: { type: string }
+        content_hash: { type: string }
+        published_at: { type: string, format: date-time }
+        published_by: { type: string }
+        scan_status: { type: string, enum: [pass, warn, fail, none] }
+        signature: { type: string }
+        document_url: { type: string, format: uri }
+
     UserIdentity:
       type: object
       required: [role]
@@ -257,6 +540,72 @@ components:
       required: [error]
       properties:
         error: { type: string }
+
+    # --- Wire-protocol schemas ---
+    WireIndex:
+      type: object
+      required: [schema_version, registry, components]
+      properties:
+        schema_version: { type: integer, enum: [2] }
+        registry: { type: string }
+        components:
+          type: array
+          items: { $ref: "#/components/schemas/WireIndexEntry" }
+
+    WireIndexEntry:
+      type: object
+      required: [kind, namespace, name, description, owner_team, latest_version, latest_hash, scan_status]
+      properties:
+        kind: { type: string, enum: [skill, rule, agent, hook] }
+        namespace: { type: string, enum: [forge] }
+        name: { type: string }
+        description: { type: string }
+        owner_team: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        latest_version: { type: string }
+        latest_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        scan_status: { type: string, enum: [pass, warn, fail, none] }
+
+    WireManifest:
+      type: object
+      required: [schema_version, namespace, name, description, owner_team, latest, versions]
+      properties:
+        schema_version: { type: integer, enum: [1] }
+        namespace: { type: string, enum: [forge] }
+        name: { type: string }
+        description: { type: string }
+        owner_team: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        latest: { type: string }
+        versions:
+          type: array
+          items: { $ref: "#/components/schemas/WireVersion" }
+
+    WireVersion:
+      type: object
+      required: [version, content_hash, published_at, published_by, scan_status]
+      properties:
+        version: { type: string }
+        content_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        published_at: { type: string, format: date-time }
+        published_by: { type: string }
+        scan_status: { type: string, enum: [pass, warn, fail, none] }
+
+    WireError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [not_found, hub_not_ready, catalog_unreadable, encode_failed, tarball_build_failed, unsupported_entry, hash_failed]
+        namespace: { type: string }
+        name: { type: string }
+        version: { type: string }
+        message: { type: string }
         message: { type: string }
         namespace: { type: string }
         name: { type: string }

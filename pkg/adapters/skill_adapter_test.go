@@ -48,7 +48,7 @@ func TestClaudeCodeAdapter_ProjectInstallWritesDirAndMarker(t *testing.T) {
 	assert.Equal(t, "claude-code", res.Agent)
 	assert.Equal(t, filepath.Join(project, ".claude", "skills", "design-system"), res.TargetPath)
 	assert.NotEmpty(t, res.ContentHash)
-	assert.Equal(t, filepath.Join(res.TargetPath, ".skill-version"), res.MarkerPath)
+	assert.Equal(t, filepath.Join(res.TargetPath, ".fdh-managed.yaml"), res.MarkerPath)
 
 	// SKILL.md AND references/extra.md must have been copied.
 	_, err = os.Stat(filepath.Join(res.TargetPath, "SKILL.md"))
@@ -60,7 +60,8 @@ func TestClaudeCodeAdapter_ProjectInstallWritesDirAndMarker(t *testing.T) {
 	marker, err := adapters.LoadMarker(res.MarkerPath)
 	require.NoError(t, err)
 	assert.Equal(t, "design-system", marker.Name)
-	assert.Equal(t, "2026.05", marker.HubVersion)
+	assert.Equal(t, "skill", marker.Kind)
+	assert.Equal(t, "2026.05", marker.Version)
 	assert.Equal(t, "abcd1234", marker.HubCommit)
 	assert.Equal(t, res.ContentHash, marker.ContentHash)
 	assert.WithinDuration(t, time.Now(), marker.InstalledAt, 5*time.Minute)
@@ -120,7 +121,7 @@ func TestCopilotAdapter_FlatInstallWritesPromptAndMarker(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "copilot", res.Agent)
 	assert.Equal(t, filepath.Join(project, ".github", "prompts", "review.prompt.md"), res.TargetPath)
-	assert.Equal(t, filepath.Join(project, ".github", "prompts", ".skill-version-review"), res.MarkerPath)
+	assert.Equal(t, filepath.Join(project, ".github", "prompts", "review.prompt.md.fdh-managed.yaml"), res.MarkerPath)
 
 	body, err := os.ReadFile(res.TargetPath)
 	require.NoError(t, err)
@@ -182,8 +183,11 @@ func TestSkillAdapterByID(t *testing.T) {
 }
 
 func TestMarkerNameConvention(t *testing.T) {
-	assert.Equal(t, ".skill-version", adapters.MarkerName("claude-code", "x"))
-	assert.Equal(t, ".skill-version", adapters.MarkerName("codex", "x"))
-	assert.Equal(t, ".skill-version-x", adapters.MarkerName("copilot", "x"))
-	assert.Equal(t, ".skill-version-x", adapters.MarkerName("opencode", "x"))
+	// New marker convention: canonical .fdh-managed.yaml for
+	// directory-based agents; <basename>.fdh-managed.yaml sibling
+	// for flat agents.
+	assert.Equal(t, ".fdh-managed.yaml", adapters.MarkerName("claude-code", "x"))
+	assert.Equal(t, ".fdh-managed.yaml", adapters.MarkerName("codex", "x"))
+	assert.Equal(t, "x.prompt.md.fdh-managed.yaml", adapters.MarkerName("copilot", "x"))
+	assert.Equal(t, "x.md.fdh-managed.yaml", adapters.MarkerName("opencode", "x"))
 }
