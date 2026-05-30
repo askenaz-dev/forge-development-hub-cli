@@ -39,14 +39,14 @@ var Filename = filepath.Join(".fdh", "lock.yaml")
 
 // Lock is the resolved snapshot.
 type Lock struct {
-	SchemaVersion      int         `yaml:"schema_version"`
-	HubCommit          string      `yaml:"hub_commit"`
-	ResolvedAt         time.Time   `yaml:"resolved_at"`
-	ResolvedFromProfile string     `yaml:"resolved_from_profile,omitempty"`
-	Skills             []LockEntry `yaml:"skills,omitempty"`
-	Rules              []LockEntry `yaml:"rules,omitempty"`
-	Agents             []LockEntry `yaml:"agents,omitempty"`
-	Hooks              []LockEntry `yaml:"hooks,omitempty"`
+	SchemaVersion       int         `yaml:"schema_version"`
+	HubCommit           string      `yaml:"hub_commit"`
+	ResolvedAt          time.Time   `yaml:"resolved_at"`
+	ResolvedFromProfile string      `yaml:"resolved_from_profile,omitempty"`
+	Skills              []LockEntry `yaml:"skills,omitempty"`
+	Rules               []LockEntry `yaml:"rules,omitempty"`
+	Agents              []LockEntry `yaml:"agents,omitempty"`
+	Hooks               []LockEntry `yaml:"hooks,omitempty"`
 }
 
 // LockEntry is one resolved component recorded in the lock.
@@ -191,11 +191,11 @@ func decode(body []byte) (*Lock, error) {
 // (lock has, manifest does not request), "integrity" (matched name
 // but integrity differs).
 type Divergence struct {
-	Name      string
-	Kind      string
-	Status    string
-	Expected  string
-	Actual    string
+	Name     string
+	Kind     string
+	Status   string
+	Expected string
+	Actual   string
 }
 
 func (d Divergence) String() string {

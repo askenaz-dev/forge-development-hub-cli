@@ -5,13 +5,13 @@
 // drives it through the 7 scenarios that Section 11 of the
 // extend-portal-api-with-wire-protocol change calls for:
 //
-//   1. binary starts cleanly with FDH_PORTAL_HUB_PATH set
-//   2. GET /v1/index.json returns 200 + Content-Type + ETag
-//   3. GET /v1/skills/dx-platform/test-skill/manifest.json returns the manifest
-//   4. GET .../bundle.sha256 returns the canonical content hash
-//   5. GET .../bundle.tar.gz; extracted-dir hash matches the sidecar
-//   6. Two GETs of .../bundle.tar.gz produce byte-identical bodies
-//   7. GET with If-None-Match: <etag> returns 304
+//  1. binary starts cleanly with FDH_PORTAL_HUB_PATH set
+//  2. GET /v1/index.json returns 200 + Content-Type + ETag
+//  3. GET /v1/skills/dx-platform/test-skill/manifest.json returns the manifest
+//  4. GET .../bundle.sha256 returns the canonical content hash
+//  5. GET .../bundle.tar.gz; extracted-dir hash matches the sidecar
+//  6. Two GETs of .../bundle.tar.gz produce byte-identical bodies
+//  7. GET with If-None-Match: <etag> returns 304
 //
 // Run with:
 //

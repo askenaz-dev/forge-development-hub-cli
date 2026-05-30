@@ -106,7 +106,7 @@ func (c CosignVerifier) Verify(ctx context.Context, contentHash, signature strin
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 
 	blob := filepath.Join(tmp, "content-hash")
 	if err := os.WriteFile(blob, []byte(contentHash), 0o600); err != nil {
@@ -133,7 +133,7 @@ func (c CosignVerifier) Verify(ctx context.Context, contentHash, signature strin
 
 	out, err := exec.CommandContext(ctx, "cosign", args...).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("cosign verify-blob: %v: %s", err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("cosign verify-blob: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	signer := c.CertIdentityRegexp
 	if c.KeyPath != "" {

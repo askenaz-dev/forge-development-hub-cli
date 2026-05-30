@@ -109,12 +109,12 @@ type Manifest struct {
 // The Status field implements capability `component-lifecycle`:
 //   - "active"     — installable and selectable by default (zero value).
 //   - "deprecated" — still installable, but resolution emits a warning
-//                    and `fdh doctor` flags consumers pinned to this
-//                    version. Forward-only: active → deprecated.
+//     and `fdh doctor` flags consumers pinned to this
+//     version. Forward-only: active → deprecated.
 //   - "yanked"     — excluded from constraint resolution; install
-//                    refuses without `--allow-yanked <version>`. Wire
-//                    protocol serves 410 Gone for the bundle.
-//                    Forward-only: deprecated → yanked, no un-yank.
+//     refuses without `--allow-yanked <version>`. Wire
+//     protocol serves 410 Gone for the bundle.
+//     Forward-only: deprecated → yanked, no un-yank.
 type Version struct {
 	Version      string `json:"version"`      // semver
 	ContentHash  string `json:"content_hash"` // canonical sha256 hex

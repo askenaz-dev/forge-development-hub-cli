@@ -184,11 +184,6 @@ func splitSection(body string) (managedLines []string, foreign, before, after st
 	// Expand the section bounds to include the line endings around it
 	// so removing the section doesn't leave a stranded blank line.
 	begin := beginIdx
-	// Pull back to start of preceding blank line if any.
-	if begin > 0 && body[begin-1] == '\n' {
-		// keep the newline that terminated the preceding line —
-		// removing it would join lines.
-	}
 	end := endIdx + len(MarkerEnd)
 	if end < len(body) && body[end] == '\n' {
 		end++ // include trailing newline of the closing sentinel
@@ -197,15 +192,10 @@ func splitSection(body string) (managedLines []string, foreign, before, after st
 	before = body[:begin]
 	after = body[end:]
 
-	// Trim one extra blank line that may have separated foreign
-	// content from the section.
-	if strings.HasSuffix(before, "\n\n") && (strings.HasPrefix(after, "") /* trivially true */) {
-		// drop only ONE blank line on the leading side
+	// Trim one extra blank line that may have separated foreign content
+	// from the section (drop only ONE blank line on the leading side).
+	if strings.HasSuffix(before, "\n\n") {
 		before = strings.TrimSuffix(before, "\n")
-	}
-	if strings.HasPrefix(after, "\n") {
-		// We already absorbed the trailing newline of the END marker.
-		// Keep any subsequent blank lines verbatim.
 	}
 
 	foreign = before + after

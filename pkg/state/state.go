@@ -35,10 +35,10 @@ const Filename = "state.json"
 
 // State is the on-disk JSON shape.
 type State struct {
-	SchemaVersion      int                          `json:"schema_version"`
-	UserScopeInstalls  KindBuckets                  `json:"user_scope_installs"`
-	HubCache           HubCache                     `json:"hub_cache"`
-	Projects           map[string]ProjectEntry      `json:"projects,omitempty"`
+	SchemaVersion     int                     `json:"schema_version"`
+	UserScopeInstalls KindBuckets             `json:"user_scope_installs"`
+	HubCache          HubCache                `json:"hub_cache"`
+	Projects          map[string]ProjectEntry `json:"projects,omitempty"`
 }
 
 // KindBuckets holds installs per kind.

@@ -24,25 +24,25 @@ import (
 // `fdh install` (no positional argument). Distinct from
 // InstallResult because the data is per-flow, not per-skill.
 type ManifestInstallResult struct {
-	FromManifest     bool                 `json:"from_manifest"`
-	Frozen           bool                 `json:"frozen,omitempty"`
-	HubCommit        string               `json:"hub_commit,omitempty"`
-	ResolvedFrom     string               `json:"resolved_from_profile,omitempty"`
-	Components       []ManifestComponent  `json:"components"`
-	LockWritten      bool                 `json:"lock_written"`
-	ManifestWritten  bool                 `json:"manifest_written,omitempty"`
-	GeneratedFromLegacy bool              `json:"generated_from_legacy,omitempty"`
-	GitignoreUpdated bool                 `json:"gitignore_updated,omitempty"`
+	FromManifest        bool                `json:"from_manifest"`
+	Frozen              bool                `json:"frozen,omitempty"`
+	HubCommit           string              `json:"hub_commit,omitempty"`
+	ResolvedFrom        string              `json:"resolved_from_profile,omitempty"`
+	Components          []ManifestComponent `json:"components"`
+	LockWritten         bool                `json:"lock_written"`
+	ManifestWritten     bool                `json:"manifest_written,omitempty"`
+	GeneratedFromLegacy bool                `json:"generated_from_legacy,omitempty"`
+	GitignoreUpdated    bool                `json:"gitignore_updated,omitempty"`
 }
 
 // ManifestComponent is one resolved+materialized component entry.
 type ManifestComponent struct {
-	Name       string   `json:"name"`
-	Kind       string   `json:"kind"`
-	Version    string   `json:"version,omitempty"`
-	HubPath    string   `json:"hub_path"`
+	Name         string   `json:"name"`
+	Kind         string   `json:"kind"`
+	Version      string   `json:"version,omitempty"`
+	HubPath      string   `json:"hub_path"`
 	Materialized []string `json:"materialized,omitempty"`
-	Skipped     bool     `json:"skipped,omitempty"`
+	Skipped      bool     `json:"skipped,omitempty"`
 }
 
 // runInstallManifest is the no-args entry point: it resolves the
