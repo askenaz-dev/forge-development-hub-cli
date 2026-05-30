@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ type ManifestInstallResult struct {
 	FromManifest        bool                `json:"from_manifest"`
 	Frozen              bool                `json:"frozen,omitempty"`
 	HubCommit           string              `json:"hub_commit,omitempty"`
-	ResolvedFrom        string              `json:"resolved_from_profile,omitempty"`
+	ResolvedFrom        string              `json:"resolved_from_harness,omitempty"`
 	Components          []ManifestComponent `json:"components"`
 	LockWritten         bool                `json:"lock_written"`
 	ManifestWritten     bool                `json:"manifest_written,omitempty"`
@@ -66,12 +67,17 @@ func runInstallManifest(cmd *cobra.Command, rc *runContext, info BuildInfo) erro
 		return nil
 	}
 
+	// Surface any load-time deprecation notices (e.g. legacy `profile:`).
+	for _, warn := range manifest.Warnings {
+		fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+warn)
+	}
+
 	if err := consumermanifest.Validate(manifest); err != nil {
 		return Errorf(ExitInvalidUsage, "%v", err)
 	}
 
-	// Profile lookup needs the hub clone — load it before validating.
-	// (Profile resolution itself happens below, after we have reg.)
+	// Harness lookup needs the hub clone — load it before validating.
+	// (Harness resolution itself happens below, after we have reg.)
 
 	// Hub catalog access (uses the same path the wizard/update use).
 	hubURL := hubURLFromConfigOrFlag(rc)
@@ -83,35 +89,40 @@ func runInstallManifest(cmd *cobra.Command, rc *runContext, info BuildInfo) erro
 		return Wrap(ExitRegistryUnreach, err)
 	}
 
-	// Build a profile lookup backed by the hub's profiles.yaml.
-	var profileLookup consumermanifest.ProfileLookup
-	if manifest.Profile != "" {
-		doc, perr := reg.LoadProfiles()
+	// Build a harness lookup backed by the hub's harnesses.yaml.
+	var harnessLookup consumermanifest.HarnessLookup
+	if manifest.Harness != "" {
+		doc, perr := reg.LoadHarnesses()
 		if perr != nil {
-			return Errorf(ExitInvalidUsage, "load profiles: %v", perr)
+			return Errorf(ExitInvalidUsage, "load harnesses: %v", perr)
 		}
-		profileLookup = func(name string) ([]consumermanifest.ProfileMember, error) {
-			p, ok := doc.Profiles[name]
+		harnessLookup = func(name string) ([]consumermanifest.HarnessMember, error) {
+			h, ok := doc.Harnesses[name]
 			if !ok {
-				return nil, fmt.Errorf("profile %q not found in hub/profiles.yaml", name)
+				avail := make([]string, 0, len(doc.Harnesses))
+				for k := range doc.Harnesses {
+					avail = append(avail, k)
+				}
+				sort.Strings(avail)
+				return nil, fmt.Errorf("harness %q not found in hub/harnesses.yaml (available: %s)", name, strings.Join(avail, ", "))
 			}
-			var out []consumermanifest.ProfileMember
-			for _, n := range p.Skills {
-				out = append(out, consumermanifest.ProfileMember{Name: n, Kind: managed.KindSkill})
+			var out []consumermanifest.HarnessMember
+			for _, n := range h.Skills {
+				out = append(out, consumermanifest.HarnessMember{Name: n, Kind: managed.KindSkill})
 			}
-			for _, n := range p.Rules {
-				out = append(out, consumermanifest.ProfileMember{Name: n, Kind: managed.KindRule})
+			for _, n := range h.Rules {
+				out = append(out, consumermanifest.HarnessMember{Name: n, Kind: managed.KindRule})
 			}
-			for _, n := range p.Agents {
-				out = append(out, consumermanifest.ProfileMember{Name: n, Kind: managed.KindAgent})
+			for _, n := range h.Agents {
+				out = append(out, consumermanifest.HarnessMember{Name: n, Kind: managed.KindAgent})
 			}
-			for _, n := range p.Hooks {
-				out = append(out, consumermanifest.ProfileMember{Name: n, Kind: managed.KindHook})
+			for _, n := range h.Hooks {
+				out = append(out, consumermanifest.HarnessMember{Name: n, Kind: managed.KindHook})
 			}
 			return out, nil
 		}
 	}
-	resolved, err := consumermanifest.Expand(manifest, reg, profileLookup)
+	resolved, err := consumermanifest.Expand(manifest, reg, harnessLookup)
 	if err != nil {
 		return Errorf(ExitInvalidUsage, "%v", err)
 	}
@@ -157,7 +168,7 @@ func runInstallManifest(cmd *cobra.Command, rc *runContext, info BuildInfo) erro
 	}
 
 	// Write lock with the new resolution.
-	lock := consumerlock.Build(resolved, reg.HubCommit, time.Now(), manifest.Profile)
+	lock := consumerlock.Build(resolved, reg.HubCommit, time.Now(), manifest.Harness)
 	lockWritten := false
 	if !frozen {
 		if err := consumerlock.Write(rc.ProjectRoot, lock); err != nil {
@@ -202,7 +213,7 @@ func runInstallManifest(cmd *cobra.Command, rc *runContext, info BuildInfo) erro
 		FromManifest:     true,
 		Frozen:           frozen,
 		HubCommit:        reg.HubCommit,
-		ResolvedFrom:     manifest.Profile,
+		ResolvedFrom:     manifest.Harness,
 		Components:       components,
 		LockWritten:      lockWritten,
 		GitignoreUpdated: gitignoreUpdated,
@@ -392,7 +403,7 @@ func printManifestInstallTable(w io.Writer, r ManifestInstallResult) error {
 	}
 	fmt.Fprintf(w, "Manifest-flow install (%s) — hub @ %s\n", mode, short(r.HubCommit))
 	if r.ResolvedFrom != "" {
-		fmt.Fprintf(w, "  resolved from profile: %s\n", r.ResolvedFrom)
+		fmt.Fprintf(w, "  resolved from harness: %s\n", r.ResolvedFrom)
 	}
 	for _, c := range r.Components {
 		if c.Skipped {

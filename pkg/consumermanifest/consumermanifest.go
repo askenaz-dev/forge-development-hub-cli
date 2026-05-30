@@ -2,9 +2,9 @@
 // `.fdh/manifest.yaml` schema and operations:
 //
 //   - Load: read and decode the file with KnownFields(true).
-//   - Validate: enforce schema_version, name, scope, optional profile.
+//   - Validate: enforce schema_version, name, scope, optional harness.
 //   - Expand: resolve a manifest against a hub registry into a flat
-//     list of ResolvedComponent (profile + extends + explicit
+//     list of ResolvedComponent (harness + extends + explicit
 //     entries, deduped by (name, kind)).
 //   - GenerateFromLegacy: derive a manifest from on-disk markers
 //     when the consumer has no manifest yet.
@@ -37,15 +37,26 @@ const SupportedSchemaVersion = 1
 var Filename = filepath.Join(".fdh", "manifest.yaml")
 
 // Manifest is the consumer's declarative intent.
+//
+// Harness names a single curated bundle from the hub (declared in
+// `hub/harnesses.yaml`). Profile is the deprecated former name for the
+// same field; it is still decoded so pre-rename manifests keep working,
+// but Load normalizes it into Harness and records a deprecation
+// warning. New manifests SHALL use `harness:`.
 type Manifest struct {
 	SchemaVersion int      `yaml:"schema_version"`
-	Profile       string   `yaml:"profile,omitempty"`
+	Harness       string   `yaml:"harness,omitempty"`
+	Profile       string   `yaml:"profile,omitempty"` // deprecated alias for Harness
 	Scope         string   `yaml:"scope,omitempty"`
 	Skills        []Entry  `yaml:"skills,omitempty"`
 	Rules         []Entry  `yaml:"rules,omitempty"`
 	Agents        []Entry  `yaml:"agents,omitempty"`
 	Hooks         []Entry  `yaml:"hooks,omitempty"`
 	Extends       *Extends `yaml:"extends,omitempty"`
+
+	// Warnings carries non-fatal load-time notices (e.g. use of the
+	// deprecated `profile:` field). Never serialized; populated by Load.
+	Warnings []string `yaml:"-"`
 }
 
 // Entry is one component reference in a kind block.
@@ -64,7 +75,7 @@ type Entry struct {
 	Version string `yaml:"version,omitempty"`
 }
 
-// Extends supports add/remove modifiers over a base profile.
+// Extends supports add/remove modifiers over a base harness.
 type Extends struct {
 	AddSkills    []Entry `yaml:"add_skills,omitempty"`
 	RemoveSkills []Entry `yaml:"remove_skills,omitempty"`
@@ -89,7 +100,7 @@ type ResolvedComponent struct {
 	Name            string
 	Kind            string
 	HubEntry        *hubregistry.ComponentEntry
-	FromProfile     bool
+	FromHarness     bool
 	ConstraintRaw   string
 	ResolvedVersion string
 }
@@ -105,11 +116,34 @@ func Load(rootDir string) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Pre-check: a list-valued `harness:` is a common "stacking"
+	// mistake. Catch it before strict decode so the error names the
+	// right fix (composition is `extends:`, not a list of harnesses).
+	var probe struct {
+		Harness yaml.Node `yaml:"harness"`
+	}
+	if perr := yaml.Unmarshal(body, &probe); perr == nil && probe.Harness.Kind == yaml.SequenceNode {
+		return nil, fmt.Errorf("consumermanifest: %s: `harness:` takes a single name, not a list; compose multiple bundles with `extends: { add_skills: [...] }`", path)
+	}
+
 	var m Manifest
 	dec := yaml.NewDecoder(bytes.NewReader(body))
 	dec.KnownFields(true)
 	if err := dec.Decode(&m); err != nil {
 		return nil, fmt.Errorf("consumermanifest: parse %s: %w", path, err)
+	}
+	// Normalize the deprecated `profile:` alias into `harness:` and
+	// record a deprecation warning. New manifests use `harness:`.
+	if m.Profile != "" {
+		if m.Harness == "" {
+			m.Harness = m.Profile
+			m.Warnings = append(m.Warnings,
+				fmt.Sprintf("%s: `profile:` is deprecated — rename it to `harness:`", path))
+		} else {
+			m.Warnings = append(m.Warnings,
+				fmt.Sprintf("%s: both `harness:` and `profile:` set — `profile:` is ignored (use `harness:` only)", path))
+		}
+		m.Profile = "" // canonicalize: downstream reads Harness; Write emits harness:
 	}
 	return &m, nil
 }
@@ -177,38 +211,38 @@ func validateEntry(block string, e Entry) error {
 	return nil
 }
 
-// ProfileLookup is a function the caller provides to resolve a
-// profile name to its list of (name, kind) members. Profiles are
-// declared by the hub in `hub/profiles.yaml`; resolving them is the
+// HarnessLookup is a function the caller provides to resolve a
+// harness name to its list of (name, kind) members. Harnesses are
+// declared by the hub in `hub/harnesses.yaml`; resolving them is the
 // caller's job because this package does not know how the hub stores
-// profiles. Returns os.ErrNotExist (or a typed error) if the profile
+// harnesses. Returns os.ErrNotExist (or a typed error) if the harness
 // name is unknown.
-type ProfileLookup func(profile string) ([]ProfileMember, error)
+type HarnessLookup func(harness string) ([]HarnessMember, error)
 
-// ProfileMember is one member of a hub profile.
-type ProfileMember struct {
+// HarnessMember is one member of a hub harness.
+type HarnessMember struct {
 	Name string
 	Kind string
 }
 
 // Expand resolves the manifest against a hub catalog and an optional
-// profile resolver. Result is sorted by (kind, name).
+// harness resolver. Result is sorted by (kind, name).
 //
 // Resolution algorithm:
-//  1. Start with the profile members (if any), each marked
-//     FromProfile=true.
+//  1. Start with the harness members (if any), each marked
+//     FromHarness=true.
 //  2. Apply Extends.Remove_* (remove from the set).
 //  3. Apply Extends.Add_* (add to the set; preserve membership; not
-//     marked FromProfile).
+//     marked FromHarness).
 //  4. Add explicit manifest entries (Skills/Rules/Agents/Hooks).
 //  5. Dedup by (name, kind); explicit/add entries override the
-//     profile-derived membership flag only by preserving the most
-//     authoritative source (explicit > add > profile).
+//     harness-derived membership flag only by preserving the most
+//     authoritative source (explicit > add > harness).
 //  6. For each surviving (name, kind), look up the hub entry. If
 //     missing, return error naming the unresolved tuple.
 //
-// profileLookup may be nil if the manifest declares no profile.
-func Expand(m *Manifest, reg *hubregistry.Registry, profileLookup ProfileLookup) ([]ResolvedComponent, error) {
+// harnessLookup may be nil if the manifest declares no harness.
+func Expand(m *Manifest, reg *hubregistry.Registry, harnessLookup HarnessLookup) ([]ResolvedComponent, error) {
 	if m == nil {
 		return nil, errors.New("consumermanifest.Expand: nil manifest")
 	}
@@ -219,17 +253,17 @@ func Expand(m *Manifest, reg *hubregistry.Registry, profileLookup ProfileLookup)
 	type key struct{ name, kind string }
 	set := map[key]ResolvedComponent{}
 
-	if m.Profile != "" {
-		if profileLookup == nil {
-			return nil, fmt.Errorf("consumermanifest.Expand: manifest declares profile %q but no profile lookup was provided", m.Profile)
+	if m.Harness != "" {
+		if harnessLookup == nil {
+			return nil, fmt.Errorf("consumermanifest.Expand: manifest declares harness %q but no harness lookup was provided", m.Harness)
 		}
-		members, err := profileLookup(m.Profile)
+		members, err := harnessLookup(m.Harness)
 		if err != nil {
-			return nil, fmt.Errorf("consumermanifest.Expand: profile %q: %w", m.Profile, err)
+			return nil, fmt.Errorf("consumermanifest.Expand: harness %q: %w", m.Harness, err)
 		}
 		for _, mem := range members {
 			set[key{mem.Name, mem.Kind}] = ResolvedComponent{
-				Name: mem.Name, Kind: mem.Kind, FromProfile: true,
+				Name: mem.Name, Kind: mem.Kind, FromHarness: true,
 			}
 		}
 	}
@@ -263,7 +297,7 @@ func Expand(m *Manifest, reg *hubregistry.Registry, profileLookup ProfileLookup)
 		}
 	}
 
-	// Explicit entries (highest priority — overrides profile mark).
+	// Explicit entries (highest priority — overrides harness mark).
 	for _, e := range m.Skills {
 		set[key{e.Name, managed.KindSkill}] = ResolvedComponent{Name: e.Name, Kind: managed.KindSkill, ConstraintRaw: e.Version}
 	}
@@ -409,7 +443,7 @@ func Write(rootDir string, m *Manifest) error {
 }
 
 // HasAnyEntries reports whether the manifest declares at least one
-// component (in any kind block, profile, or extends-add).
+// component (in any kind block, harness, or extends-add).
 func HasAnyEntries(m *Manifest) bool {
 	if m == nil {
 		return false
@@ -417,7 +451,7 @@ func HasAnyEntries(m *Manifest) bool {
 	if len(m.Skills)+len(m.Rules)+len(m.Agents)+len(m.Hooks) > 0 {
 		return true
 	}
-	if m.Profile != "" {
+	if m.Harness != "" {
 		return true
 	}
 	if m.Extends != nil {

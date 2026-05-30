@@ -48,7 +48,7 @@
   },
   "componentDetail": {
     "installCommand": "Comando de instalación",
-    "installUnavailable": "`fdh install` directo soporta skills por ahora. Los {kind} se materializan en tu proyecto vía `fdh init` y profiles del hub.",
+    "installUnavailable": "`fdh install` directo soporta skills por ahora. Los {kind} se materializan en tu proyecto vía `fdh init` y harnesses del hub.",
     "ownerTeam": "Equipo dueño",
     "scanStatus": "Estado del scan",
     "versionHistory": "Historial de versiones",

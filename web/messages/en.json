@@ -48,7 +48,7 @@
   },
   "componentDetail": {
     "installCommand": "Install command",
-    "installUnavailable": "Direct `fdh install` currently supports skills. {kind} are materialized into your project via `fdh init` and hub profiles.",
+    "installUnavailable": "Direct `fdh install` currently supports skills. {kind} are materialized into your project via `fdh init` and hub harnesses.",
     "ownerTeam": "Owner team",
     "scanStatus": "Scan status",
     "versionHistory": "Version history",
