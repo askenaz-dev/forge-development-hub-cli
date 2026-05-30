@@ -1,7 +1,7 @@
 import { getRequestConfig } from "next-intl/server";
 
 /**
- * Supported locales. `es` is the default, matching forge's primary
+ * Supported locales. `es` is the default, matching Forge's primary
  * language; `en` covers the broader engineering org and contractors.
  *
  * Pages live under `app/[locale]/`. The next-intl middleware rewrites

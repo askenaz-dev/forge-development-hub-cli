@@ -21,7 +21,7 @@ export async function SiteNav() {
           <Sparkles className="h-5 w-5 text-primary" />
           <span>FDH</span>
           <span className="hidden text-muted-foreground sm:inline">
-            forge Development Hub
+            Forge Development Hub
           </span>
         </Link>
 
