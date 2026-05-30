@@ -46,7 +46,11 @@ observability:
 ingress:
   enabled: true
   className: "nginx"
-  host: "agent-skills.askenaz.dev"
+  host: "fdh.askenaz.dev"
+  # Deprecated hosts that 301-redirect to `host`, path + scheme preserved.
+  # Transition only — remove once the migration window closes.
+  redirectHosts:
+    - "agent-skills.askenaz.dev"
   tls:
     enabled: true
     # Reuse the Cloudflare Origin Cert applied via setup-k8s.ps1.

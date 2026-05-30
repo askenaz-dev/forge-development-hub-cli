@@ -80,4 +80,42 @@ spec:
                 name: {{ include "fdh-portal.web.name" . }}
                 port:
                   name: http
+{{- if .Values.ingress.redirectHosts }}
+---
+# Transition redirect: deprecated hosts 301 to the canonical host. nginx
+# evaluates $request_uri at request time, so the path is preserved.
+# Remove this object once the migration window closes.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "fdh-portal.fullname" . }}-redirect
+  labels:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/permanent-redirect: https://{{ .Values.ingress.host }}$request_uri
+    nginx.ingress.kubernetes.io/permanent-redirect-code: "301"
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        {{- range .Values.ingress.redirectHosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.redirectHosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "fdh-portal.web.name" $ }}
+                port:
+                  name: http
+    {{- end }}
+{{- end }}
 {{- end }}
