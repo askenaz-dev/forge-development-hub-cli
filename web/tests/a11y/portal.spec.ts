@@ -10,6 +10,12 @@ import AxeBuilder from "@axe-core/playwright";
  *
  * Auth-gated pages (`/profile`, `/admin`) are excluded — they require a
  * real Keycloak session in the runner, which is out of scope for this gate.
+ *
+ * Reduced motion is emulated per page (page.emulateMedia) so axe evaluates
+ * the settled, final visual state. The scroll-reveal/count-up enhancements
+ * render immediately under prefers-reduced-motion (see the motion
+ * primitives), so this is exactly what a reduced-motion user sees — and it
+ * avoids axe sampling an element mid opacity-fade transition.
  */
 
 const PUBLIC_PAGES = [
@@ -29,6 +35,12 @@ async function runAxe(page: Page) {
 
 for (const { path, label } of PUBLIC_PAGES) {
   test(`a11y @a11y ${label} (${path})`, async ({ page }) => {
+    // Evaluate the settled state: prefers-reduced-motion makes Reveal/CountUp
+    // render their final values immediately, so axe never samples an element
+    // mid opacity-fade. emulateMedia is a typed Page API (avoids a
+    // version-specific TestOptions typing pitfall with the `reducedMotion`
+    // config option).
+    await page.emulateMedia({ reducedMotion: "reduce" });
     // Use domcontentloaded — Next.js dev keeps HMR sockets open so
     // networkidle never settles. domcontentloaded + an explicit wait
     // for main content is enough for axe-core to analyze the page.
