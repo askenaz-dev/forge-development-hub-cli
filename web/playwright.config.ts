@@ -25,12 +25,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      // Emulate reduced motion so the accessibility audit evaluates the
-      // settled, final visual state. Scroll-reveal/count-up enhancements
-      // render immediately under prefers-reduced-motion (see the motion
-      // primitives), so this is exactly what a reduced-motion user sees —
-      // and it avoids axe sampling an element mid opacity-fade transition.
-      use: { ...devices["Desktop Chrome"], reducedMotion: "reduce" },
+      use: { ...devices["Desktop Chrome"] },
     },
   ],
   webServer: process.env.PLAYWRIGHT_BASE_URL
