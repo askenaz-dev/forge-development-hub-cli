@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { listSkills } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SkillsSearch } from "@/components/skills-search";
+import { Reveal } from "@/components/motion/reveal";
 
 /**
  * /skills — server-rendered, SEO-friendly catalog.
@@ -37,26 +38,27 @@ export default async function SkillsPage({
           <p className="text-muted-foreground">{t("empty")}</p>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {page.items.map((s) => (
-              <Link
-                key={`${s.namespace}/${s.name}`}
-                href={`/skills/${s.namespace}/${s.name}`}
-                className="block group"
-              >
-                <Card className="h-full transition-colors group-hover:border-primary">
-                  <CardHeader>
-                    <p className="font-mono text-xs text-muted-foreground">{s.namespace}</p>
-                    <CardTitle className="text-base">{s.name}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <CardDescription className="line-clamp-3">{s.description}</CardDescription>
-                    <div className="mt-3 flex items-center justify-between text-xs">
-                      <span className="font-mono text-muted-foreground">v{s.latest_version}</span>
-                      <ScanBadge status={s.scan_status} />
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
+            {page.items.map((s, i) => (
+              <Reveal key={`${s.namespace}/${s.name}`} delayMs={Math.min(i, 8) * 60}>
+                <Link
+                  href={`/skills/${s.namespace}/${s.name}`}
+                  className="block group h-full"
+                >
+                  <Card className="forge-glow-hover h-full">
+                    <CardHeader>
+                      <p className="font-mono text-xs text-muted-foreground">{s.namespace}</p>
+                      <CardTitle className="text-base">{s.name}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <CardDescription className="line-clamp-3">{s.description}</CardDescription>
+                      <div className="mt-3 flex items-center justify-between text-xs">
+                        <span className="font-mono text-muted-foreground">v{s.latest_version}</span>
+                        <ScanBadge status={s.scan_status} />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              </Reveal>
             ))}
           </div>
         )}

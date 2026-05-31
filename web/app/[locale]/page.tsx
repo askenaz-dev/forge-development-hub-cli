@@ -1,74 +1,68 @@
-import Link from "next/link";
-import { getTranslations } from "next-intl/server";
-import { ArrowRight, Boxes, Lock, Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { setRequestLocale } from "next-intl/server";
+import { Hero } from "@/components/landing/hero";
+import { AgentStrip } from "@/components/landing/agent-strip";
+import { PrimitivesSection } from "@/components/landing/primitives-section";
+import { HowItWorks } from "@/components/landing/how-it-works";
+import { LiveCatalog } from "@/components/landing/live-catalog";
+import { TrustBand } from "@/components/landing/trust-band";
+import { HarnessSection } from "@/components/landing/harness-section";
+import { FinalCta } from "@/components/landing/final-cta";
+import { Reveal } from "@/components/motion/reveal";
+import { getLandingData } from "@/lib/landing-data";
 
 /**
- * Landing page — the entry point for new visitors.
+ * Landing page — the Ember Forge narrative home.
  *
- * Two primary CTAs above the fold (Install CLI, Browse the catalog) per the
- * portal-onboarding spec; "Sign in" lives in the global header (also above
- * the fold) and is intentionally not duplicated here. The feature trio
- * communicates the product's three load-bearing values.
+ * A scroll story that *demonstrates* the product (portal-web "narrative landing
+ * with live catalog data"): hero → agents → the four primitives → how it works
+ * → live catalog → trust → harness → final CTA. Sign-in lives in the global
+ * header, not duplicated here (portal-onboarding CTA contract).
+ *
+ * Server-rendered with live ISR data (getLandingData), so first paint contains
+ * real content and the page degrades gracefully if the catalog API is down.
+ * Each section below the fold is wrapped in <Reveal> for an on-scroll entrance
+ * that is disabled under prefers-reduced-motion.
  */
-export default async function LandingPage() {
-  const t = await getTranslations("landing");
+export const revalidate = 300;
+
+export default async function LandingPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  setRequestLocale(locale);
+
+  const data = await getLandingData();
 
   return (
     <>
-      <section className="container py-16 md:py-24">
-        <div className="mx-auto max-w-3xl text-center">
-          <h1 className="text-balance text-4xl font-bold tracking-tight md:text-5xl">
-            {t("headline")}
-          </h1>
-          <p className="mt-6 text-balance text-lg text-muted-foreground">
-            {t("subhead")}
-          </p>
-          <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button asChild size="lg">
-              <Link href="/install">
-                {t("ctaInstall")} <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-            <Button asChild size="lg" variant="outline">
-              <Link href="/skills">{t("ctaBrowse")}</Link>
-            </Button>
-          </div>
-        </div>
-      </section>
+      <Hero data={data} />
 
-      <section className="container pb-20">
-        <div className="grid gap-6 md:grid-cols-3">
-          <Card>
-            <CardHeader>
-              <Boxes className="h-6 w-6 text-primary" />
-              <CardTitle>{t("feature1Title")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CardDescription>{t("feature1Body")}</CardDescription>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <Lock className="h-6 w-6 text-primary" />
-              <CardTitle>{t("feature2Title")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CardDescription>{t("feature2Body")}</CardDescription>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <Sparkles className="h-6 w-6 text-primary" />
-              <CardTitle>{t("feature3Title")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CardDescription>{t("feature3Body")}</CardDescription>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
+      <Reveal>
+        <AgentStrip />
+      </Reveal>
+
+      <Reveal>
+        <PrimitivesSection />
+      </Reveal>
+
+      <Reveal>
+        <HowItWorks />
+      </Reveal>
+
+      {/* LiveCatalog manages its own per-card staggered reveals. */}
+      <LiveCatalog data={data} />
+
+      <Reveal>
+        <TrustBand />
+      </Reveal>
+
+      <Reveal>
+        <HarnessSection />
+      </Reveal>
+
+      <FinalCta />
     </>
   );
 }

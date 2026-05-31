@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { listComponents, type Kind } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CatalogSearch } from "@/components/catalog-search";
+import { Reveal } from "@/components/motion/reveal";
 
 /**
  * ComponentCatalog is the shared, server-rendered browse grid for one kind
@@ -45,26 +46,27 @@ export async function ComponentCatalog({
           <p className="text-muted-foreground">{t("empty", { kind: kindLabel })}</p>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {page.items.map((c) => (
-              <Link
-                key={`${c.namespace}/${c.name}`}
-                href={`${basePath}/${c.namespace}/${c.name}`}
-                className="block group"
-              >
-                <Card className="h-full transition-colors group-hover:border-primary">
-                  <CardHeader>
-                    <p className="font-mono text-xs text-muted-foreground">{c.namespace}</p>
-                    <CardTitle className="text-base">{c.name}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <CardDescription className="line-clamp-3">{c.description}</CardDescription>
-                    <div className="mt-3 flex items-center justify-between text-xs">
-                      <span className="font-mono text-muted-foreground">v{c.latest_version}</span>
-                      <span className="font-mono text-muted-foreground">{c.scan_status}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
+            {page.items.map((c, i) => (
+              <Reveal key={`${c.namespace}/${c.name}`} delayMs={Math.min(i, 8) * 60}>
+                <Link
+                  href={`${basePath}/${c.namespace}/${c.name}`}
+                  className="block group h-full"
+                >
+                  <Card className="forge-glow-hover h-full">
+                    <CardHeader>
+                      <p className="font-mono text-xs text-muted-foreground">{c.namespace}</p>
+                      <CardTitle className="text-base">{c.name}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <CardDescription className="line-clamp-3">{c.description}</CardDescription>
+                      <div className="mt-3 flex items-center justify-between text-xs">
+                        <span className="font-mono text-muted-foreground">v{c.latest_version}</span>
+                        <span className="font-mono text-muted-foreground">{c.scan_status}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              </Reveal>
             ))}
           </div>
         )}
