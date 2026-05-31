@@ -24,16 +24,16 @@ export async function HarnessSection() {
         <div className="rounded-lg border bg-card p-5 font-mono text-sm shadow-sm">
           <p className="text-muted-foreground"># .fdh/manifest.yaml</p>
           <p>
-            <span className="text-ember">harness</span>
+            <span className="text-ember-text">harness</span>
             <span className="text-foreground">: </span>
             <span className="text-foreground">forge-frontend</span>
           </p>
           <p className="text-foreground">extends:</p>
           <p className="pl-4 text-foreground">
-            add_skills: [<span className="text-ember">i18n-helper</span>]
+            add_skills: [<span className="text-ember-text">i18n-helper</span>]
           </p>
           <p className="pl-4 text-foreground">
-            remove_rules: [<span className="text-ember">no-console-log</span>]
+            remove_rules: [<span className="text-ember-text">no-console-log</span>]
           </p>
         </div>
       </div>
