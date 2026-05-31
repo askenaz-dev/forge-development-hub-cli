@@ -25,6 +25,17 @@
     --input: 214 32% 91%;
     --ring: 221 83% 53%;
     --radius: 0.625rem;
+
+    /* Ember Forge accent — the brand "molten" warmth. Used for glow,
+       borders, fills, and large display text. NOT for small body text on
+       light backgrounds (would fail AA); see --ember-foreground for text
+       placed ON an ember fill (dark, AA-safe over orange). */
+    --ember: 24 95% 53%;
+    --ember-foreground: 20 14% 8%;
+    /* Molten gradient stops (hero + reveals). Warm sweep ember→red→rose. */
+    --forge-grad-from: 36 100% 56%;
+    --forge-grad-via: 18 92% 51%;
+    --forge-grad-to: 344 80% 52%;
   }
 
   .dark {
@@ -45,6 +56,13 @@
     --border: 217 33% 17%;
     --input: 217 33% 17%;
     --ring: 217 91% 60%;
+
+    /* Ember glows hotter on dark; foreground stays dark for text on fills. */
+    --ember: 28 100% 62%;
+    --ember-foreground: 20 14% 8%;
+    --forge-grad-from: 36 100% 60%;
+    --forge-grad-via: 14 90% 55%;
+    --forge-grad-to: 344 75% 56%;
   }
 }
 
@@ -73,4 +91,78 @@
 .skip-link:focus {
   left: 1rem;
   top: 1rem;
+}
+
+/* ───────────────────────── Forge motion + brand utilities ─────────────────────────
+   The reveal/count-up primitives toggle these states from JS; with no JS the
+   content stays visible (initial state is "shown"). All decorative motion is
+   disabled under prefers-reduced-motion by the global guard at the bottom. */
+
+/* Molten gradient text (hero tagline highlight). */
+.text-molten {
+  background-image: linear-gradient(
+    100deg,
+    hsl(var(--forge-grad-from)),
+    hsl(var(--forge-grad-via)),
+    hsl(var(--forge-grad-to))
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Ember focus/hover glow for interactive cards. */
+.forge-glow-hover {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
+}
+.forge-glow-hover:hover {
+  border-color: hsl(var(--ember) / 0.5);
+  box-shadow: 0 0 0 1px hsl(var(--ember) / 0.25),
+    0 10px 40px -12px hsl(var(--ember) / 0.45);
+}
+
+/* Sparks motif: a layered radial-gradient field that drifts slowly. Purely
+   decorative; aria-hidden in markup and paused under reduced motion. */
+.forge-sparks {
+  background-image:
+    radial-gradient(1.5px 1.5px at 20% 30%, hsl(var(--ember) / 0.6), transparent),
+    radial-gradient(1.5px 1.5px at 70% 60%, hsl(var(--forge-grad-via) / 0.5), transparent),
+    radial-gradient(1px 1px at 45% 80%, hsl(var(--ember) / 0.5), transparent),
+    radial-gradient(1px 1px at 85% 25%, hsl(var(--forge-grad-from) / 0.5), transparent);
+  background-size: 180px 180px, 240px 240px, 200px 200px, 160px 160px;
+  animation: forge-spark-drift 14s linear infinite;
+}
+
+/* Animated molten background for the hero (slow pan). */
+.forge-molten-bg {
+  background-image: linear-gradient(
+    115deg,
+    hsl(var(--forge-grad-from) / 0.18),
+    hsl(var(--forge-grad-via) / 0.14),
+    hsl(var(--forge-grad-to) / 0.16)
+  );
+  background-size: 200% 200%;
+  animation: forge-gradient-pan 16s ease infinite;
+}
+
+@keyframes forge-spark-drift {
+  from { background-position: 0 0, 0 0, 0 0, 0 0; }
+  to   { background-position: 180px 360px, -240px 240px, 200px -200px, -160px 160px; }
+}
+
+/* Global reduced-motion guard — backstops every JS hook and CSS animation. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .forge-sparks,
+  .forge-molten-bg {
+    animation: none !important;
+  }
 }

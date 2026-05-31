@@ -6,7 +6,9 @@
     "hooks": "Hooks",
     "install": "Instalar CLI",
     "getStarted": "Empezar",
-    "signIn": "Iniciar sesión"
+    "signIn": "Iniciar sesión",
+    "openMenu": "Abrir menú",
+    "closeMenu": "Cerrar menú"
   },
   "landing": {
     "headline": "El hub de componentes para tus agentes de IA",
@@ -64,5 +66,12 @@
   "common": {
     "loading": "Cargando…",
     "error": "Algo salió mal."
+  },
+  "footer": {
+    "blurb": "Un solo registry para skills, reglas, agentes y hooks — forjados una vez, materializados en Claude Code, GitHub Copilot, OpenAI Codex y OpenCode.",
+    "catalog": "Catálogo",
+    "getStartedHeading": "Empezar",
+    "docs": "Docs",
+    "accessibility": "Accesibilidad"
   }
 }
