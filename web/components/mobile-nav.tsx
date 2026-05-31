@@ -24,9 +24,10 @@ interface NavLink {
  *   - body scroll is locked while open;
  *   - navigating (route change) auto-closes.
  *
- * It is rendered only below the `md` breakpoint by SiteNav. The theme toggle
- * and locale switcher are passed in as children so this component stays free
- * of their client-only dependencies and SiteNav keeps one source of truth.
+ * It is rendered only below the `lg` breakpoint by SiteNav (covers phones AND
+ * tablets like 768px, where the full horizontal nav would overflow). The theme
+ * toggle and locale switcher are passed in as children so this component stays
+ * free of their client-only dependencies and SiteNav keeps one source of truth.
  */
 export function MobileNav({
   links,
@@ -97,7 +98,7 @@ export function MobileNav({
   }, [open]);
 
   return (
-    <div className="md:hidden">
+    <div className="lg:hidden">
       <Button
         ref={triggerRef}
         variant="ghost"

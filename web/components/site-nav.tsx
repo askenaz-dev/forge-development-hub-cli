@@ -13,8 +13,9 @@ import { MobileNav } from "@/components/mobile-nav";
  * LocaleSwitcher, and MobileNav). The four primitive kinds each get a nav tab
  * so the whole catalog is discoverable, not just skills.
  *
- * Responsive: at `md+` the full horizontal nav shows; below `md` it collapses
- * to a hamburger (`<MobileNav>`) so the 8+ destinations never overflow a phone
+ * Responsive: at `lg+` the full horizontal nav shows; below `lg` (incl. tablet
+ * widths like 768px) it collapses to a hamburger (`<MobileNav>`). The full nav
+ * needs ~1024px to fit, so `md` (768px) would overflow — hence `lg`, not `md`
  * (portal-web responsive requirement).
  */
 export async function SiteNav() {
@@ -41,7 +42,7 @@ export async function SiteNav() {
         </Link>
 
         {/* Desktop nav */}
-        <nav className="hidden items-center gap-1 text-sm md:flex">
+        <nav className="hidden items-center gap-1 text-sm lg:flex">
           {links.map((l) => (
             <Button key={l.href} asChild variant="ghost" size="sm">
               <Link href={l.href}>{l.label}</Link>
@@ -55,7 +56,7 @@ export async function SiteNav() {
           </Button>
         </nav>
 
-        {/* Mobile nav (below md) */}
+        {/* Mobile/tablet nav (below lg) */}
         <MobileNav
           links={links}
           signInLabel={t("signIn")}
