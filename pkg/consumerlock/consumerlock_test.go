@@ -35,9 +35,9 @@ func sampleResolved() []consumermanifest.ResolvedComponent {
 }
 
 func TestBuild_GroupsByKind(t *testing.T) {
-	l := consumerlock.Build(sampleResolved(), "abc123", time.Unix(1, 0), "minimal")
+	l := consumerlock.Build(sampleResolved(), "abc123", time.Unix(1, 0), "default")
 	assert.Equal(t, "abc123", l.HubCommit)
-	assert.Equal(t, "minimal", l.ResolvedFromProfile)
+	assert.Equal(t, "default", l.ResolvedFromHarness)
 	require.Len(t, l.Skills, 1)
 	assert.Equal(t, "design-system", l.Skills[0].Name)
 	require.Len(t, l.Rules, 1)
@@ -131,4 +131,25 @@ resolved_at: 2026-05-29T00:00:00Z
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".fdh", "lock.yaml"), []byte(bad), 0o644))
 	_, err := consumerlock.Read(dir)
 	require.Error(t, err)
+}
+
+// TestRead_LegacyResolvedFromProfile verifies a pre-rename lock carrying
+// `resolved_from_profile` decodes under strict KnownFields and is
+// normalized into ResolvedFromHarness.
+func TestRead_LegacyResolvedFromProfile(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".fdh"), 0o755))
+	legacy := `schema_version: 1
+hub_commit: abc123
+resolved_at: 2026-05-29T00:00:00Z
+resolved_from_profile: default
+skills:
+  - name: design-system
+    path: skills/design-system
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".fdh", "lock.yaml"), []byte(legacy), 0o644))
+	got, err := consumerlock.Read(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "default", got.ResolvedFromHarness, "legacy resolved_from_profile must normalize into ResolvedFromHarness")
+	assert.Empty(t, got.ResolvedFromProfileLegacy, "legacy field cleared after normalization")
 }

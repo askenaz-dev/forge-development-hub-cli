@@ -2,7 +2,7 @@
 // shape and operations:
 //
 //   - Build: assemble a Lock from a list of resolved components plus
-//     hub_commit / resolved_at / resolved_from_profile.
+//     hub_commit / resolved_at / resolved_from_harness.
 //   - Write: serialize to disk with byte-deterministic output (LF,
 //     no BOM, fixed key order, alphabetical component order).
 //   - Read: decode + KnownFields strict check.
@@ -38,15 +38,23 @@ const SupportedSchemaVersion = 1
 var Filename = filepath.Join(".fdh", "lock.yaml")
 
 // Lock is the resolved snapshot.
+//
+// ResolvedFromHarness records which hub harness produced this
+// resolution (informational only — the expanded component lists are
+// the reproducibility source of truth). resolvedFromProfileLegacy
+// decodes the pre-rename `resolved_from_profile` key so old locks read
+// without error; Read normalizes it into ResolvedFromHarness and
+// clears it, so Write only ever emits `resolved_from_harness`.
 type Lock struct {
-	SchemaVersion       int         `yaml:"schema_version"`
-	HubCommit           string      `yaml:"hub_commit"`
-	ResolvedAt          time.Time   `yaml:"resolved_at"`
-	ResolvedFromProfile string      `yaml:"resolved_from_profile,omitempty"`
-	Skills              []LockEntry `yaml:"skills,omitempty"`
-	Rules               []LockEntry `yaml:"rules,omitempty"`
-	Agents              []LockEntry `yaml:"agents,omitempty"`
-	Hooks               []LockEntry `yaml:"hooks,omitempty"`
+	SchemaVersion             int         `yaml:"schema_version"`
+	HubCommit                 string      `yaml:"hub_commit"`
+	ResolvedAt                time.Time   `yaml:"resolved_at"`
+	ResolvedFromHarness       string      `yaml:"resolved_from_harness,omitempty"`
+	ResolvedFromProfileLegacy string      `yaml:"resolved_from_profile,omitempty"` // deprecated; read-only
+	Skills                    []LockEntry `yaml:"skills,omitempty"`
+	Rules                     []LockEntry `yaml:"rules,omitempty"`
+	Agents                    []LockEntry `yaml:"agents,omitempty"`
+	Hooks                     []LockEntry `yaml:"hooks,omitempty"`
 }
 
 // LockEntry is one resolved component recorded in the lock.
@@ -60,12 +68,12 @@ type LockEntry struct {
 // Build assembles a Lock from resolved components plus snapshot
 // metadata. Always sorts entries alphabetically by name within each
 // kind for byte-determinism.
-func Build(resolved []consumermanifest.ResolvedComponent, hubCommit string, resolvedAt time.Time, fromProfile string) *Lock {
+func Build(resolved []consumermanifest.ResolvedComponent, hubCommit string, resolvedAt time.Time, fromHarness string) *Lock {
 	l := &Lock{
 		SchemaVersion:       SupportedSchemaVersion,
 		HubCommit:           hubCommit,
 		ResolvedAt:          resolvedAt.UTC(),
-		ResolvedFromProfile: fromProfile,
+		ResolvedFromHarness: fromHarness,
 	}
 	for _, r := range resolved {
 		entry := LockEntry{Name: r.Name}
@@ -182,6 +190,14 @@ func decode(body []byte) (*Lock, error) {
 	if l.SchemaVersion != SupportedSchemaVersion {
 		return nil, fmt.Errorf("consumerlock: schema_version %d not supported (this fdh supports %d)",
 			l.SchemaVersion, SupportedSchemaVersion)
+	}
+	// Normalize the deprecated `resolved_from_profile` key so a legacy
+	// lock reads cleanly and any rewrite emits `resolved_from_harness`.
+	if l.ResolvedFromProfileLegacy != "" {
+		if l.ResolvedFromHarness == "" {
+			l.ResolvedFromHarness = l.ResolvedFromProfileLegacy
+		}
+		l.ResolvedFromProfileLegacy = ""
 	}
 	return &l, nil
 }

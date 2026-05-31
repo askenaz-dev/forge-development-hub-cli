@@ -54,6 +54,9 @@ jobs:
       - name: Test
         run: task test
 
+      - name: Smoke (portal-api subprocess)
+        run: task smoke
+
   lint:
     name: lint
     runs-on: ubuntu-latest

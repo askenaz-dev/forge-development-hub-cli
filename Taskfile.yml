@@ -47,6 +47,11 @@ tasks:
     cmds:
       - go test -race ./...
 
+  smoke:
+    desc: Run subprocess smoke tests (build tag `smoke`) — boots the real portal-api
+    cmds:
+      - go test -tags smoke ./cmd/fdh-portal-api/...
+
   lint:
     desc: Run golangci-lint over the codebase
     cmds:

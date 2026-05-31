@@ -7,9 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 /**
  * Landing page — the entry point for new visitors.
  *
- * Three CTAs above the fold (Install CLI, Browse skills, Sign in) per the
- * portal-onboarding spec. The feature trio communicates the product's
- * three load-bearing values.
+ * Two primary CTAs above the fold (Install CLI, Browse the catalog) per the
+ * portal-onboarding spec; "Sign in" lives in the global header (also above
+ * the fold) and is intentionally not duplicated here. The feature trio
+ * communicates the product's three load-bearing values.
  */
 export default async function LandingPage() {
   const t = await getTranslations("landing");
@@ -32,9 +33,6 @@ export default async function LandingPage() {
             </Button>
             <Button asChild size="lg" variant="outline">
               <Link href="/skills">{t("ctaBrowse")}</Link>
-            </Button>
-            <Button asChild size="lg" variant="ghost">
-              <Link href="/auth/signin">{t("ctaSignIn")}</Link>
             </Button>
           </div>
         </div>

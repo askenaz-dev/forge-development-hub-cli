@@ -19,7 +19,7 @@ func TestLoad_ValidManifest(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".fdh"), 0o755))
 	body := `schema_version: 1
-profile: minimal
+harness: default
 skills:
   - name: design-system
 rules:
@@ -30,7 +30,7 @@ rules:
 	m, err := consumermanifest.Load(dir)
 	require.NoError(t, err)
 	assert.Equal(t, 1, m.SchemaVersion)
-	assert.Equal(t, "minimal", m.Profile)
+	assert.Equal(t, "default", m.Harness)
 	require.Len(t, m.Skills, 1)
 	assert.Equal(t, "design-system", m.Skills[0].Name)
 	require.Len(t, m.Rules, 1)
@@ -48,6 +48,66 @@ mystery_field: foo
 	_, err := consumermanifest.Load(dir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mystery_field")
+}
+
+// TestLoad_LegacyProfileAliasWarns verifies the deprecated `profile:` field
+// is accepted, normalized into Harness, cleared, and flagged via Warnings.
+func TestLoad_LegacyProfileAliasWarns(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".fdh"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".fdh", "manifest.yaml"),
+		[]byte("schema_version: 1\nprofile: default\n"), 0o644))
+
+	m, err := consumermanifest.Load(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "default", m.Harness, "profile: should normalize into Harness")
+	assert.Empty(t, m.Profile, "Profile should be cleared after normalization")
+	require.NotEmpty(t, m.Warnings, "expected a deprecation warning")
+	assert.Contains(t, m.Warnings[0], "deprecated")
+}
+
+// TestLoad_BothHarnessAndProfile_HarnessWins verifies harness: takes
+// precedence and profile: is reported as ignored.
+func TestLoad_BothHarnessAndProfile_HarnessWins(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".fdh"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".fdh", "manifest.yaml"),
+		[]byte("schema_version: 1\nharness: frontend\nprofile: backend\n"), 0o644))
+
+	m, err := consumermanifest.Load(dir)
+	require.NoError(t, err)
+	assert.Equal(t, "frontend", m.Harness)
+	require.NotEmpty(t, m.Warnings)
+	assert.Contains(t, m.Warnings[0], "ignored")
+}
+
+// TestLoad_HarnessListRejected verifies that stacking (a list-valued
+// harness:) is rejected with an error pointing to extends:.
+func TestLoad_HarnessListRejected(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".fdh"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".fdh", "manifest.yaml"),
+		[]byte("schema_version: 1\nharness: [a, b]\n"), 0o644))
+
+	_, err := consumermanifest.Load(dir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "extends")
+}
+
+// TestWrite_NeverEmitsProfile verifies a manifest loaded from legacy
+// profile: is rewritten with harness: only.
+func TestWrite_NeverEmitsProfile(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".fdh"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".fdh", "manifest.yaml"),
+		[]byte("schema_version: 1\nprofile: default\n"), 0o644))
+	m, err := consumermanifest.Load(dir)
+	require.NoError(t, err)
+	require.NoError(t, consumermanifest.Write(dir, m))
+	out, err := os.ReadFile(filepath.Join(dir, ".fdh", "manifest.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "harness: default")
+	assert.NotContains(t, string(out), "profile:")
 }
 
 func TestValidate_UnsupportedSchema(t *testing.T) {
@@ -95,7 +155,7 @@ func TestExpand_ExplicitEntriesResolve(t *testing.T) {
 	assert.Equal(t, managed.KindSkill, resolved[1].Kind)
 }
 
-func TestExpand_ProfileAndExtends(t *testing.T) {
+func TestExpand_HarnessAndExtends(t *testing.T) {
 	reg := &hubregistry.Registry{
 		Components: []hubregistry.ComponentEntry{
 			{Name: "design-system", Kind: managed.KindSkill, Path: "skills/design-system", AgentsSupported: []string{"claude-code"}},
@@ -105,22 +165,22 @@ func TestExpand_ProfileAndExtends(t *testing.T) {
 	}
 	m := &consumermanifest.Manifest{
 		SchemaVersion: 1,
-		Profile:       "minimal",
+		Harness:       "default",
 		Extends: &consumermanifest.Extends{
 			AddSkills:    []consumermanifest.Entry{{Name: "extra"}},
 			RemoveSkills: []consumermanifest.Entry{{Name: "design-system"}},
 		},
 	}
-	profile := func(name string) ([]consumermanifest.ProfileMember, error) {
-		if name != "minimal" {
-			return nil, errors.New("unknown profile")
+	harness := func(name string) ([]consumermanifest.HarnessMember, error) {
+		if name != "default" {
+			return nil, errors.New("unknown harness")
 		}
-		return []consumermanifest.ProfileMember{
+		return []consumermanifest.HarnessMember{
 			{Name: "design-system", Kind: managed.KindSkill},
 			{Name: "code-review", Kind: managed.KindSkill},
 		}, nil
 	}
-	resolved, err := consumermanifest.Expand(m, reg, profile)
+	resolved, err := consumermanifest.Expand(m, reg, harness)
 	require.NoError(t, err)
 	names := make([]string, 0, len(resolved))
 	for _, r := range resolved {
@@ -140,25 +200,25 @@ func TestExpand_UnresolvedComponentFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "missing")
 }
 
-func TestExpand_ProfileNotResolvableFails(t *testing.T) {
+func TestExpand_HarnessNotResolvableFails(t *testing.T) {
 	reg := &hubregistry.Registry{}
-	m := &consumermanifest.Manifest{SchemaVersion: 1, Profile: "minimal"}
+	m := &consumermanifest.Manifest{SchemaVersion: 1, Harness: "default"}
 	_, err := consumermanifest.Expand(m, reg, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "profile")
+	assert.Contains(t, err.Error(), "harness")
 }
 
 func TestWrite_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	m := &consumermanifest.Manifest{
 		SchemaVersion: 1,
-		Profile:       "minimal",
+		Harness:       "default",
 		Skills:        []consumermanifest.Entry{{Name: "design-system"}},
 	}
 	require.NoError(t, consumermanifest.Write(dir, m))
 	got, err := consumermanifest.Load(dir)
 	require.NoError(t, err)
-	assert.Equal(t, m.Profile, got.Profile)
+	assert.Equal(t, m.Harness, got.Harness)
 	assert.Len(t, got.Skills, 1)
 }
 
@@ -199,8 +259,8 @@ func TestHasAnyEntries(t *testing.T) {
 	empty := &consumermanifest.Manifest{SchemaVersion: 1}
 	assert.False(t, consumermanifest.HasAnyEntries(empty))
 
-	withProfile := &consumermanifest.Manifest{SchemaVersion: 1, Profile: "x"}
-	assert.True(t, consumermanifest.HasAnyEntries(withProfile))
+	withHarness := &consumermanifest.Manifest{SchemaVersion: 1, Harness: "x"}
+	assert.True(t, consumermanifest.HasAnyEntries(withHarness))
 
 	withSkill := &consumermanifest.Manifest{SchemaVersion: 1, Skills: []consumermanifest.Entry{{Name: "x"}}}
 	assert.True(t, consumermanifest.HasAnyEntries(withSkill))
