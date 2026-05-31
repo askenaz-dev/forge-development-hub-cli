@@ -47,13 +47,15 @@ ingress:
   enabled: true
   className: "nginx"
   host: "fdh.askenaz.dev"
-  # Deprecated hosts that 301-redirect to `host`, path + scheme preserved.
-  # Transition only — remove once the migration window closes.
-  redirectHosts:
-    - "agent-skills.askenaz.dev"
+  # Canonical host only. The deprecated agent-skills.askenaz.dev is NOT served
+  # by the origin — any redirect from it to fdh.askenaz.dev is handled at the
+  # Cloudflare edge (a Redirect Rule), since ingress-nginx v1.14 rejects the
+  # permanent-redirect annotation's $request_uri and has snippets disabled.
+  aliasHosts: []
   tls:
-    enabled: true
-    # Reuse the Cloudflare Origin Cert applied via setup-k8s.ps1.
+    # TLS terminates at Cloudflare; the origin Ingress serves plain HTTP on
+    # :80. No in-cluster cert secret is referenced while this is false.
+    enabled: false
     secretName: "cloudflare-origin-tls"
   annotations:
     # Optional hardening (uncomment what you want):

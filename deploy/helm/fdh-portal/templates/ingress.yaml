@@ -1,4 +1,15 @@
 {{- if .Values.ingress.enabled }}
+{{- $svcAPI := include "fdh-portal.api.name" . -}}
+{{- $svcWeb := include "fdh-portal.web.name" . -}}
+{{- /*
+  Hosts served by the portal. `host` is canonical (fdh.askenaz.dev). Any
+  `aliasHosts` (e.g. the deprecated agent-skills.askenaz.dev) are served
+  IDENTICALLY from the same backends so existing links keep working during
+  the migration window. A true 301 redirect from alias → canonical is done
+  at the Cloudflare edge (the ingress-nginx `permanent-redirect` annotation
+  rejects `$request_uri`, and snippet annotations are disabled cluster-wide).
+*/ -}}
+{{- $hosts := prepend (.Values.ingress.aliasHosts | default (list)) .Values.ingress.host -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -14,11 +25,14 @@ spec:
   {{- if .Values.ingress.tls.enabled }}
   tls:
     - hosts:
-        - {{ .Values.ingress.host | quote }}
+        {{- range $hosts }}
+        - {{ . | quote }}
+        {{- end }}
       secretName: {{ .Values.ingress.tls.secretName }}
   {{- end }}
   rules:
-    - host: {{ .Values.ingress.host | quote }}
+    {{- range $host := $hosts }}
+    - host: {{ $host | quote }}
       http:
         paths:
           # Wire protocol consumed by the fdh CLI's HTTPRegistry. Anonymous,
@@ -28,94 +42,57 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "fdh-portal.api.name" . }}
+                name: {{ $svcAPI }}
                 port:
                   name: http
           - path: /api
             pathType: Prefix
             backend:
               service:
-                name: {{ include "fdh-portal.api.name" . }}
+                name: {{ $svcAPI }}
                 port:
                   name: http
           - path: /metrics
             pathType: Prefix
             backend:
               service:
-                name: {{ include "fdh-portal.api.name" . }}
+                name: {{ $svcAPI }}
                 port:
                   name: http
           - path: /openapi.yaml
             pathType: Exact
             backend:
               service:
-                name: {{ include "fdh-portal.api.name" . }}
+                name: {{ $svcAPI }}
                 port:
                   name: http
           - path: /docs
             pathType: Prefix
             backend:
               service:
-                name: {{ include "fdh-portal.api.name" . }}
+                name: {{ $svcAPI }}
                 port:
                   name: http
           - path: /healthz
             pathType: Exact
             backend:
               service:
-                name: {{ include "fdh-portal.api.name" . }}
+                name: {{ $svcAPI }}
                 port:
                   name: http
           - path: /readyz
             pathType: Exact
             backend:
               service:
-                name: {{ include "fdh-portal.api.name" . }}
+                name: {{ $svcAPI }}
                 port:
                   name: http
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ include "fdh-portal.web.name" . }}
-                port:
-                  name: http
-{{- if .Values.ingress.redirectHosts }}
----
-# Transition redirect: deprecated hosts 301 to the canonical host. nginx
-# evaluates $request_uri at request time, so the path is preserved.
-# Remove this object once the migration window closes.
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: {{ include "fdh-portal.fullname" . }}-redirect
-  labels:
-    {{- include "fdh-portal.labels" . | nindent 4 }}
-  annotations:
-    nginx.ingress.kubernetes.io/permanent-redirect: https://{{ .Values.ingress.host }}$request_uri
-    nginx.ingress.kubernetes.io/permanent-redirect-code: "301"
-spec:
-  ingressClassName: {{ .Values.ingress.className }}
-  {{- if .Values.ingress.tls.enabled }}
-  tls:
-    - hosts:
-        {{- range .Values.ingress.redirectHosts }}
-        - {{ . | quote }}
-        {{- end }}
-      secretName: {{ .Values.ingress.tls.secretName }}
-  {{- end }}
-  rules:
-    {{- range .Values.ingress.redirectHosts }}
-    - host: {{ . | quote }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "fdh-portal.web.name" $ }}
+                name: {{ $svcWeb }}
                 port:
                   name: http
     {{- end }}
-{{- end }}
 {{- end }}
