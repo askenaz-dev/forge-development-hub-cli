@@ -9,13 +9,12 @@
     "signIn": "Sign in"
   },
   "landing": {
-    "headline": "The skill hub for your development agents",
-    "subhead": "Forge Development Hub centralizes, governs, and distributes Agent Skills for Claude Code, GitHub Copilot, OpenAI Codex, and OpenCode.",
+    "headline": "The component hub for your AI coding agents",
+    "subhead": "Forge Development Hub centralizes, governs, and distributes skills, rules, agents, and hooks for Claude Code, GitHub Copilot, OpenAI Codex, and OpenCode.",
     "ctaInstall": "Install the CLI",
-    "ctaBrowse": "Browse skills",
-    "ctaSignIn": "Sign in",
+    "ctaBrowse": "Browse the catalog",
     "feature1Title": "Multi-agent",
-    "feature1Body": "One registry, four agents. Install a skill once and it appears in every tool you use.",
+    "feature1Body": "One registry, four agents. Install skills, rules, agents, and hooks once and they appear in every tool you use.",
     "feature2Title": "Governed",
     "feature2Body": "Forge identity via Keycloak. Roles, audit, and per-team approvals.",
     "feature3Title": "Spec-compliant",
