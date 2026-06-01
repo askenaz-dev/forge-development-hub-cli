@@ -14,8 +14,14 @@ import (
 const HarnessesFile = "hub/harnesses.yaml"
 
 // HarnessesDoc is the in-memory shape of hub/harnesses.yaml.
+//
+// SchemaVersion is decoded but currently informational only — the
+// canonical hub schema for harnesses is v1. Declared so KnownFields
+// strict-decoding accepts the documented top-level field rather than
+// failing with "field schema_version not found".
 type HarnessesDoc struct {
-	Harnesses map[string]HarnessDoc `yaml:"harnesses"`
+	SchemaVersion int                   `yaml:"schema_version,omitempty"`
+	Harnesses     map[string]HarnessDoc `yaml:"harnesses"`
 }
 
 // HarnessDoc is one named harness (a curated bundle of components).

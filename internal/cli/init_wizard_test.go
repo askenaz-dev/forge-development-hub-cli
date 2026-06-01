@@ -61,16 +61,43 @@ func buildWizardHub(t *testing.T) string {
 }
 
 // fakePrompter is a deterministic wizardPrompter for tests.
+//
+// Field semantics:
+//   - pickedHarness: returned by SelectHarness; "" mimics "skip step".
+//   - pickedAgents:  returned by SelectAgents.
+//   - pickedComponents: returned by SelectComponents (new kind-aware step).
+//   - pickedSkills:  legacy field; if set AND pickedComponents is empty,
+//                    forwarded as componentRef{kind=skill} so old tests
+//                    keep matching during the migration.
+//   - confirm:       Step 3 yes/no.
 type fakePrompter struct {
-	pickedAgents []string
-	pickedSkills []string
-	confirm      bool
+	pickedHarness    string
+	pickedAgents     []string
+	pickedComponents []componentRef
+	pickedSkills     []string
+	confirm          bool
 }
 
-func (f fakePrompter) SelectAgents(detected []string) ([]string, error) {
+func (f fakePrompter) SelectHarness(_ []harnessChoice, defaultPick string) (string, error) {
+	if f.pickedHarness != "" {
+		return f.pickedHarness, nil
+	}
+	return defaultPick, nil
+}
+func (f fakePrompter) SelectAgents(_ []string) ([]string, error) {
 	return f.pickedAgents, nil
 }
-func (f fakePrompter) SelectSkills(d, e []skillChoice, pre []string) ([]string, error) {
+func (f fakePrompter) SelectComponents(_ []componentChoice, _ []componentRef) ([]componentRef, error) {
+	if len(f.pickedComponents) > 0 {
+		return f.pickedComponents, nil
+	}
+	out := make([]componentRef, 0, len(f.pickedSkills))
+	for _, s := range f.pickedSkills {
+		out = append(out, componentRef{Name: s, Kind: "skill"})
+	}
+	return out, nil
+}
+func (f fakePrompter) SelectSkills(_, _ []skillChoice, _ []string) ([]string, error) {
 	return f.pickedSkills, nil
 }
 func (f fakePrompter) Confirm(_ string) (bool, error) { return f.confirm, nil }

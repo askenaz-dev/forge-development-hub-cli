@@ -347,7 +347,11 @@ func sparseClone(ctx context.Context, url, dest, branch string, log func(string)
 	if err := runGit(ctx, dest, "sparse-checkout", "init", "--no-cone"); err != nil {
 		return fmt.Errorf("sparse-checkout init: %w", err)
 	}
-	if err := runGit(ctx, dest, "sparse-checkout", "set", "hub/registry.yaml", "skills/registry.yaml"); err != nil {
+	if err := runGit(ctx, dest, "sparse-checkout", "set",
+		"hub/registry.yaml",
+		"hub/harnesses.yaml",
+		"skills/registry.yaml",
+	); err != nil {
 		return fmt.Errorf("sparse-checkout set: %w", err)
 	}
 	if err := runGit(ctx, dest, "fetch", "--depth", "1", "origin", branch); err != nil {
@@ -365,6 +369,17 @@ func fetchAndCheckout(ctx context.Context, dest, branch string, log func(string)
 		return err
 	}
 	if err := runGit(ctx, dest, "reset", "--hard", "FETCH_HEAD"); err != nil {
+		return err
+	}
+	// Re-set the sparse-checkout pattern so caches created by older
+	// fdh releases (which omitted hub/harnesses.yaml) materialize the
+	// file on next refresh. Idempotent — git sparse-checkout set
+	// replaces the pattern wholesale.
+	if err := runGit(ctx, dest, "sparse-checkout", "set",
+		"hub/registry.yaml",
+		"hub/harnesses.yaml",
+		"skills/registry.yaml",
+	); err != nil {
 		return err
 	}
 	return nil
