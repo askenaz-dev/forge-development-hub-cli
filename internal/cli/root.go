@@ -58,6 +58,7 @@ func newRootCmd(info BuildInfo) *cobra.Command {
 	root.AddCommand(newValidateRegistryCmd(info))
 	root.AddCommand(newBundleHashCmd(info))
 	root.AddCommand(newUpdateCmd(info))
+	root.AddCommand(newSwitchCmd(info))
 	root.AddCommand(newInstinctCmd(info))
 	root.AddCommand(newEvolveCmd())
 	for _, c := range newKindCmds(info) {
