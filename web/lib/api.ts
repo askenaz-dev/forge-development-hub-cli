@@ -276,3 +276,56 @@ export async function getComponentDocument(
     opts
   );
 }
+
+// --- Telemetry (events) ---
+//
+// The browser posts product events to the same-origin BFF route `/api/events`,
+// which forwards to the portal's `/api/v1/events`. The frontend never targets
+// the portal or any analytics backend directly.
+
+export interface TelemetryEvent {
+  event_name: string;
+  attributes?: Record<string, string>;
+}
+
+/** postEvent fires a product event from the browser. Best-effort and silent:
+ *  telemetry failures never affect the page. */
+export async function postEvent(event: TelemetryEvent): Promise<void> {
+  try {
+    await fetch("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schema_version: 1, ...event }),
+      keepalive: true,
+    });
+  } catch {
+    // swallow — telemetry is not load-bearing
+  }
+}
+
+// --- Admin insights ---
+
+export interface KV {
+  key: string;
+  count: number;
+}
+
+export interface InsightsSummary {
+  window_start: string;
+  window_end: string;
+  total: number;
+  event_counts: Record<string, number>;
+  top_downloads: KV[];
+  demand_gaps: KV[];
+  top_not_found: KV[];
+  top_installs: KV[];
+  top_uninstalls: KV[];
+  install_failures_by_class: Record<string, number>;
+  feedback: Record<string, number>;
+}
+
+/** getInsights reads the aggregated admin telemetry view. Server-side only:
+ *  the portal enforces the `admin` role against the forwarded bearer token. */
+export async function getInsights(opts?: FetchOptions): Promise<InsightsSummary> {
+  return getJSON<InsightsSummary>("/api/v1/admin/insights", opts);
+}

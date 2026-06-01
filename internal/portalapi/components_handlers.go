@@ -77,6 +77,11 @@ func (s *Server) handleListComponents(w http.ResponseWriter, r *http.Request) {
 		return items[i]["name"].(string) < items[j]["name"].(string)
 	})
 
+	// Tier 0: capture the demand gap (zero-result search) across all kinds.
+	if q != "" && len(items) == 0 {
+		s.emit(EventSearchZero, map[string]string{"query": q, "surface": "api", "kind": kind})
+	}
+
 	start := 0
 	if cursor != "" {
 		if n, err := parseOffsetCursor(cursor); err == nil && n >= 0 && n < len(items) {
@@ -243,5 +248,8 @@ func (s *Server) componentNotFound(w http.ResponseWriter, kind, ns, name, versio
 	if version != "" {
 		body["version"] = version
 	}
+	s.emit(EventComponentMissing, map[string]string{
+		"kind": kind, "namespace": ns, "name": name, "version": version,
+	})
 	s.writeJSON(w, http.StatusNotFound, body)
 }

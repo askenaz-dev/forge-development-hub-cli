@@ -53,6 +53,10 @@ type Config struct {
 	// the wire handlers respond 503 Service Unavailable; the rest of the
 	// portal (UI endpoints, /healthz) continues to function.
 	HubPath string
+
+	// Telemetry is the privacy posture for usage telemetry (internal vs
+	// public), including IP handling, identity, retention, and OTLP export.
+	Telemetry TelemetryConfig
 }
 
 // LoadConfig builds a Config from environment variables, applying defaults
@@ -84,6 +88,12 @@ func LoadConfig() (Config, error) {
 		return cfg, fmt.Errorf("FDH_PORTAL_REFRESH_INTERVAL must be at least 5s (got %s)", dur)
 	}
 	cfg.RefreshInterval = dur
+
+	tc, err := loadTelemetryConfig()
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Telemetry = tc
 
 	return cfg, nil
 }

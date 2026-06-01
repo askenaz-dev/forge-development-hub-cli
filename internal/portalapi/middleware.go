@@ -21,14 +21,23 @@ func (s *Server) withRequestLogging(next http.Handler) http.Handler {
 		traceID := extractTraceID(r.Header.Get("traceparent"))
 		u := userFromRequest(r)
 
+		// Privacy posture: transform the client IP per the configured strategy
+		// (truncate/hash/drop in public mode) before it is written anywhere,
+		// and suppress user_id under anonymous_first.
+		remoteAddr := s.cfg.Telemetry.transformIP(r.RemoteAddr)
+		userID := u.Sub
+		if s.cfg.Telemetry.AnonymousFirst() {
+			userID = ""
+		}
+
 		attrs := []any{
 			"method", r.Method,
 			"route", r.URL.Path,
 			"status", rec.status,
 			"latency_ms", dur.Milliseconds(),
-			"remote_addr", r.RemoteAddr,
+			"remote_addr", remoteAddr,
 			"user_agent", r.UserAgent(),
-			"user_id", u.Sub, // empty for anonymous
+			"user_id", userID, // empty for anonymous or under anonymous_first
 		}
 		if traceID != "" {
 			attrs = append(attrs, "trace_id", traceID)

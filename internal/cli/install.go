@@ -51,7 +51,20 @@ func newInstallCmd(info BuildInfo) *cobra.Command {
 		Long:  installHelp,
 		Args:  cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInstall(cmd, args, info)
+			err := runInstall(cmd, args, info)
+			if err != nil && len(args) == 1 {
+				// Tier 1: report install failures with a structured error_class
+				// only — no raw error text, argv, or file contents.
+				ns, name, version, perr := parseSkillRef(args[0])
+				if perr == nil {
+					emitTelemetry(cmd, EventNameInstallFailed, map[string]string{
+						"kind": "skill", "namespace": ns, "name": name, "version": version,
+						"os": goos(), "cli_version": info.Version,
+						"error_class": classifyErrorClass(err),
+					})
+				}
+			}
+			return err
 		},
 	}
 	cmd.Flags().StringSlice("agent", nil, "agent id to target (may be repeated). Default: every detected agent.")
@@ -282,6 +295,11 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 		MarkerFilename:   managed.Filename,
 		GitignoreUpdated: gitignoreUpdated,
 	}
+
+	// Tier 1: record the successful install (anonymous, coordinate + outcome
+	// only). Best-effort and non-blocking; never affects the command result.
+	emitTelemetry(cmd, EventNameInstalled,
+		lifecycleAttrs("skill", namespace, name, version, string(scope), targets, info))
 
 	if outputMode(cmd) == "json" {
 		return emitJSON(cmd.OutOrStdout(), result)

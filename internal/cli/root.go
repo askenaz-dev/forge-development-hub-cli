@@ -42,7 +42,13 @@ func newRootCmd(info BuildInfo) *cobra.Command {
 	root.PersistentFlags().BoolP("verbose", "v", false, "verbose logging to stderr")
 
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		return initConfig(cmd)
+		if err := initConfig(cmd); err != nil {
+			return err
+		}
+		// One-time notice describing opt-out telemetry. Best-effort; prints to
+		// stderr so it never pollutes --json stdout.
+		maybeShowFirstRunNotice(cmd)
+		return nil
 	}
 
 	root.AddCommand(newInitCmd(info))
@@ -60,6 +66,7 @@ func newRootCmd(info BuildInfo) *cobra.Command {
 	root.AddCommand(newUpdateCmd(info))
 	root.AddCommand(newInstinctCmd(info))
 	root.AddCommand(newEvolveCmd())
+	root.AddCommand(newFeedbackCmd(info))
 	for _, c := range newKindCmds(info) {
 		root.AddCommand(c)
 	}
@@ -104,6 +111,7 @@ func initConfig(cmd *cobra.Command) error {
 	v.SetDefault("registry.kind", "auto")
 	v.SetDefault("registry.http.api_version", "v1")
 	v.SetDefault("adapters.override", defaultAdaptersOverridePath())
+	v.SetDefault("telemetry.enabled", true)
 
 	explicit, _ := cmd.Flags().GetString("config")
 	if explicit != "" {

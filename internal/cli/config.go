@@ -27,6 +27,8 @@ var SupportedConfigKeys = map[string]string{
 	"defaults.scope":                 "Default install scope when none is provided (user|project|auto)",
 	"cache.dir":                      "Override the default cache directory (used by HTTP transport)",
 	"adapters.override":              "Path to a user-provided adapters.yaml that replaces individual agents",
+	"telemetry.enabled":              "Whether anonymous usage telemetry is emitted (true|false; default true, opt-out)",
+	"telemetry.endpoint":             "Explicit portal events endpoint; defaults to <registry.url>/api/v1/events for HTTP registries",
 }
 
 func newConfigCmd(info BuildInfo) *cobra.Command {
@@ -57,6 +59,7 @@ func newConfigCmd(info BuildInfo) *cobra.Command {
 			return runConfigList(cmd, args)
 		},
 	})
+	cmd.AddCommand(newConfigTelemetryCmd())
 	cmd.AddCommand(&cobra.Command{
 		Use:   "migrate",
 		Short: "Move config files from the legacy ~/.config/forge-installer/ to the new ~/.config/fdh/",
@@ -72,6 +75,61 @@ explicit and silences the deprecation warning printed on every load.`,
 		},
 	})
 	return cmd
+}
+
+// newConfigTelemetryCmd manages the opt-out telemetry control. `on`/`off`
+// flip telemetry.enabled; `status` reports the effective state; `reset-id`
+// rotates the anonymous installation identifier.
+func newConfigTelemetryCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "telemetry <on|off|status|reset-id>",
+		Short: "Control anonymous usage telemetry (opt-out)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch args[0] {
+			case "on":
+				viper.Set("telemetry.enabled", true)
+				if err := writeConfigFile(); err != nil {
+					return Wrap(ExitPermission, fmt.Errorf("persist config: %w", err))
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "telemetry enabled")
+			case "off":
+				viper.Set("telemetry.enabled", false)
+				if err := writeConfigFile(); err != nil {
+					return Wrap(ExitPermission, fmt.Errorf("persist config: %w", err))
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "telemetry disabled")
+			case "status":
+				state := "enabled"
+				if !telemetryEnabled() {
+					state = "disabled"
+				}
+				if doNotTrack() {
+					state += " (forced off by DO_NOT_TRACK)"
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "telemetry is %s\n", state)
+			case "reset-id":
+				id := resetInstallID()
+				fmt.Fprintf(cmd.OutOrStdout(), "regenerated anonymous install id: %s\n", id)
+			default:
+				return Errorf(ExitInvalidUsage, "unknown telemetry subcommand %q (expected on|off|status|reset-id)", args[0])
+			}
+			return nil
+		},
+	}
+	return cmd
+}
+
+// resetInstallID rotates the anonymous installation identifier. Prior events
+// cannot be linked to the new id by the client.
+func resetInstallID() string {
+	id := randomID()
+	if path := installIDPath(); path != "" {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
+			_ = os.WriteFile(path, []byte(id), 0o644)
+		}
+	}
+	return id
 }
 
 func runConfigGet(cmd *cobra.Command, args []string) error {

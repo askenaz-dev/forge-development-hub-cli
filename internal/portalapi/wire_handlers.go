@@ -330,6 +330,15 @@ func (s *Server) handleWireBundleTarball(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("ETag", etag)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+
+	// Tier 0: a successful bundle download is the canonical server-observed
+	// install signal. Count it (Prometheus) and emit a product event.
+	if s.metrics != nil {
+		s.metrics.downloadTotal.WithLabelValues(comp.Kind, namespace, comp.Name, rv.Version).Inc()
+	}
+	s.emit(EventBundleDownloaded, map[string]string{
+		"kind": comp.Kind, "namespace": namespace, "name": comp.Name, "version": rv.Version,
+	})
 }
 
 func (s *Server) handleWireBundleSidecar(w http.ResponseWriter, r *http.Request) {
@@ -450,6 +459,11 @@ func (s *Server) respondWireNotFound(w http.ResponseWriter, namespace, name, ver
 	if version != "" {
 		body["version"] = version
 	}
+	// Tier 0: a request for a component that does not exist is a demand /
+	// broken-reference signal.
+	s.emit(EventComponentMissing, map[string]string{
+		"namespace": namespace, "name": name, "version": version,
+	})
 	s.writeJSON(w, http.StatusNotFound, body)
 }
 

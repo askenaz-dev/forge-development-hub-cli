@@ -30,7 +30,10 @@ type Server struct {
 	logger     *slog.Logger
 	metrics    *metricsRegistry
 	validator  *auth.Validator // nil when auth is disabled
-	activation *activationRing
+	activation     *activationRing
+	events         Emitter
+	eventStore     *eventStore
+	tracerShutdown func(context.Context) error
 }
 
 type snapshot struct {
@@ -56,14 +59,70 @@ func New(cfg Config, build BuildInfo) (*Server, error) {
 		validator = v
 	}
 
+	logger := slog.Default()
+	store := newEventStore(0, cfg.Telemetry.Retention())
+
+	sinks := []EventSink{slogSink{logger: logger}, store}
+	var otlpShutdown func(context.Context) error
+	if sink, shutdown, err := newOTLPSink(context.Background(), build, cfg.Telemetry.OTLPEndpoint, logger); err != nil {
+		// Export is degradable: a failed exporter init must not stop the
+		// portal from serving. Fall back to slog + store only.
+		logger.Warn("telemetry: OTLP export init failed; continuing without it", "err", err)
+	} else if sink != nil {
+		sinks = append(sinks, sink)
+		otlpShutdown = shutdown
+	}
+
+	emitter := newAsyncEmitter(logger, sinks...)
+	emitter.otlp = otlpShutdown
+
+	tracerShutdown, err := newTracerProvider(context.Background(), build, cfg.Telemetry.OTLPEndpoint, logger)
+	if err != nil {
+		logger.Warn("telemetry: OTLP trace init failed; continuing without it", "err", err)
+		tracerShutdown = nil
+	}
+
 	return &Server{
-		cfg:        cfg,
-		build:      build,
-		logger:     slog.Default(),
-		metrics:    newMetrics(),
-		validator:  validator,
-		activation: newActivationRing(512),
+		cfg:            cfg,
+		build:          build,
+		logger:         logger,
+		metrics:        newMetrics(),
+		validator:      validator,
+		activation:     newActivationRing(512),
+		events:         emitter,
+		eventStore:     store,
+		tracerShutdown: tracerShutdown,
 	}, nil
+}
+
+// Shutdown flushes the telemetry emitter and shuts down the OTLP providers.
+// Safe to call once during graceful shutdown.
+func (s *Server) Shutdown(ctx context.Context) error {
+	var firstErr error
+	if s.events != nil {
+		if err := s.events.Shutdown(ctx); err != nil {
+			firstErr = err
+		}
+	}
+	if s.tracerShutdown != nil {
+		if err := s.tracerShutdown(ctx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+// emit is the internal helper handlers use to record a server-derived event.
+// It is a no-op-safe wrapper so callers never nil-check the emitter.
+func (s *Server) emit(name string, attrs map[string]string) {
+	if s.events == nil {
+		return
+	}
+	ev := Event{SchemaVersion: EventSchemaVersion, EventName: name, Attributes: attrs}
+	if !normalizeEvent(&ev) {
+		return
+	}
+	s.events.Emit(ev)
 }
 
 // buildHubIndex builds the in-memory catalog snapshot from the real hub
@@ -138,6 +197,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/refresh", s.handleRefresh)
 	mux.HandleFunc("POST /api/v1/activation", s.handlePostActivation)
 	mux.HandleFunc("GET /api/v1/admin/activation", s.handleGetActivation)
+	mux.HandleFunc("POST /api/v1/events", s.handlePostEvents)
+	mux.HandleFunc("GET /api/v1/admin/insights", s.handleGetInsights)
 
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPI)
 	// API documentation UIs.
@@ -148,9 +209,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /redoc", s.handleRedoc)
 	mux.Handle("GET /metrics", s.metrics.handler())
 
-	// Order: auth attaches user to context first; logging captures the
-	// user_id; metrics observes the wrapped handler.
-	return s.withRequestLogging(s.withAuth(s.withMetrics(mux)))
+	// Order: tracing starts the server span and extracts inbound context
+	// first (outermost) so every inner layer runs within the span; auth then
+	// attaches the user; logging captures the user_id + trace id; metrics
+	// observes the wrapped handler.
+	return s.withTracing(s.withRequestLogging(s.withAuth(s.withMetrics(mux))))
 }
 
 // RunRefreshLoop performs the initial registry read and then refreshes on

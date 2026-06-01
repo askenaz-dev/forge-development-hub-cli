@@ -181,6 +181,22 @@ func runUpdate(cmd *cobra.Command, _ []string, info BuildInfo) error {
 		}
 	}
 
+	// Tier 1: one component.updated per distinct skill actually refreshed
+	// (deduped across agents). Coordinate + outcome only.
+	if !dryRun {
+		seen := map[string]bool{}
+		for _, a := range result.Applied {
+			if seen[a.Skill] {
+				continue
+			}
+			seen[a.Skill] = true
+			emitTelemetry(cmd, EventNameUpdated, map[string]string{
+				"kind": valueOr(kindFilter, "skill"), "name": a.Skill,
+				"os": goos(), "cli_version": info.Version,
+			})
+		}
+	}
+
 	if outputMode(cmd) == "json" {
 		if err := emitJSON(cmd.OutOrStdout(), result); err != nil {
 			return Wrap(ExitGenericFailure, err)

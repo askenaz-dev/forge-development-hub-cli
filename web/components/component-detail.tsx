@@ -11,6 +11,7 @@ import {
 import { CopyCommand } from "@/components/copy-command";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarkdownView } from "@/components/markdown-view";
+import { FeedbackWidget } from "@/components/feedback-widget";
 
 /**
  * ComponentDetail is the shared, server-rendered detail view for one
@@ -144,6 +145,17 @@ export async function ComponentDetail({
                 </span>
               </div>
             ))}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="mt-10">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Feedback</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <FeedbackWidget kind={kind} namespace={namespace} name={name} />
           </CardContent>
         </Card>
       </section>

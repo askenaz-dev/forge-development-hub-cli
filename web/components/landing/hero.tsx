@@ -4,7 +4,6 @@ import { getTranslations } from "next-intl/server";
 import { Button } from "@/components/ui/button";
 import { CountUp } from "@/components/motion/count-up";
 import type { LandingData } from "@/lib/landing-data";
-import { SUPPORTED_AGENT_COUNT } from "@/lib/landing-data";
 
 /**
  * Hero — the Ember Forge above-the-fold section.
@@ -60,13 +59,14 @@ export async function Hero({ data }: { data: LandingData }) {
             </Button>
           </div>
 
-          {/* Live stat chips */}
-          <dl className="mx-auto mt-12 flex max-w-lg flex-wrap items-center justify-center gap-x-10 gap-y-4">
-            {data.live && (
-              <Stat value={data.total} label={t("statComponents")} />
-            )}
-            <Stat value={SUPPORTED_AGENT_COUNT} label={t("statAgents")} />
-            <Stat value={4} label={t("statKinds")} />
+          {/* Catalog composition — one chip per kind, with live counts.
+              When the API is down we still show the four kind labels (no
+              fabricated numbers), so the four-primitive story always reads. */}
+          <dl className="mx-auto mt-12 flex max-w-xl flex-wrap items-center justify-center gap-x-10 gap-y-4">
+            <Stat live={data.live} value={data.byKind.skill} label={t("statSkills")} />
+            <Stat live={data.live} value={data.byKind.rule} label={t("statRules")} />
+            <Stat live={data.live} value={data.byKind.agent} label={t("statAgents")} />
+            <Stat live={data.live} value={data.byKind.hook} label={t("statHooks")} />
           </dl>
         </div>
       </div>
@@ -74,13 +74,25 @@ export async function Hero({ data }: { data: LandingData }) {
   );
 }
 
-function Stat({ value, label }: { value: number; label: string }) {
+function Stat({
+  value,
+  label,
+  live,
+}: {
+  value: number;
+  label: string;
+  live: boolean;
+}) {
   return (
     <div className="flex flex-col items-center">
-      <dd className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
-        <CountUp to={value} />
-      </dd>
-      <dt className="mt-1 text-sm text-muted-foreground">{label}</dt>
+      {live && (
+        <dd className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
+          <CountUp to={value} />
+        </dd>
+      )}
+      <dt className={live ? "mt-1 text-sm text-muted-foreground" : "text-sm text-muted-foreground"}>
+        {label}
+      </dt>
     </div>
   );
 }

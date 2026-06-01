@@ -94,6 +94,12 @@ func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
 		nextCursor = encodeOffsetCursor(end)
 	}
 
+	// Tier 0: a search that returns nothing is the strongest passive
+	// "what to build" signal — the demand gap.
+	if q != "" && len(items) == 0 {
+		s.emit(EventSearchZero, map[string]string{"query": q, "surface": "api", "kind": "skill"})
+	}
+
 	s.writeJSON(w, http.StatusOK, map[string]any{
 		"items":       page,
 		"next_cursor": nextCursor,
@@ -272,6 +278,9 @@ func (s *Server) notFoundFor(w http.ResponseWriter, code, ns, name, version stri
 	if version != "" {
 		body["version"] = version
 	}
+	s.emit(EventComponentMissing, map[string]string{
+		"kind": "skill", "namespace": ns, "name": name, "version": version,
+	})
 	s.writeJSON(w, http.StatusNotFound, body)
 }
 

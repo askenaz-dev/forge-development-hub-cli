@@ -46,7 +46,6 @@ detectable, falls back to user. --scope user|project overrides.`,
 }
 
 func runUninstall(cmd *cobra.Command, args []string, info BuildInfo) error {
-	_ = info
 	verbose, _ := cmd.PersistentFlags().GetBool("verbose")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	scopeStr, _ := cmd.Flags().GetString("scope")
@@ -106,6 +105,15 @@ func runUninstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 			return Wrap(ExitGenericFailure, fmt.Errorf("update .gitignore: %w", err))
 		}
 		result.GitignoreUpdated = true
+	}
+
+	// Tier 1: churn signal. Only on a real removal, coordinate + outcome only.
+	if !dryRun && len(candidates) > 0 {
+		kind := valueOr(candidates[0].kind, "skill")
+		emitTelemetry(cmd, EventNameUninstalled, map[string]string{
+			"kind": kind, "name": name, "scope": string(scope),
+			"os": goos(), "cli_version": info.Version,
+		})
 	}
 
 	if outputMode(cmd) == "json" {

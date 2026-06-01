@@ -20,6 +20,7 @@ type metricsRegistry struct {
 	refreshTotal      *prometheus.CounterVec
 	refreshDuration   prometheus.Histogram
 	registryCacheSize prometheus.Gauge
+	downloadTotal     *prometheus.CounterVec
 }
 
 func newMetrics() *metricsRegistry {
@@ -57,9 +58,15 @@ func newMetrics() *metricsRegistry {
 		Help:      "Number of skills in the in-memory snapshot.",
 	})
 
+	downloadTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "fdh_portal_api",
+		Name:      "bundle_download_total",
+		Help:      "Number of component bundle downloads served, labeled by coordinate.",
+	}, []string{"kind", "namespace", "name", "version"})
+
 	reg.MustRegister(
 		requestDuration, requestsInFlight,
-		refreshTotal, refreshDuration, registryCacheSize,
+		refreshTotal, refreshDuration, registryCacheSize, downloadTotal,
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
@@ -67,7 +74,7 @@ func newMetrics() *metricsRegistry {
 	return &metricsRegistry{
 		reg: reg, requestDuration: requestDuration, requestsInFlight: requestsInFlight,
 		refreshTotal: refreshTotal, refreshDuration: refreshDuration,
-		registryCacheSize: registryCacheSize,
+		registryCacheSize: registryCacheSize, downloadTotal: downloadTotal,
 	}
 }
 

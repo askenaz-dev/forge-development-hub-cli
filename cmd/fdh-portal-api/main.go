@@ -97,6 +97,10 @@ func main() {
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			logger.Error("graceful shutdown failed", "err", err)
 		}
+		// Flush telemetry (drain emitter, shut down OTLP providers).
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Warn("telemetry shutdown failed", "err", err)
+		}
 	}()
 
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
