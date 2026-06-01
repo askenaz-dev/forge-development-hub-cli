@@ -67,8 +67,8 @@ func buildWizardHub(t *testing.T) string {
 //   - pickedAgents:  returned by SelectAgents.
 //   - pickedComponents: returned by SelectComponents (new kind-aware step).
 //   - pickedSkills:  legacy field; if set AND pickedComponents is empty,
-//                    forwarded as componentRef{kind=skill} so old tests
-//                    keep matching during the migration.
+//     forwarded as componentRef{kind=skill} so old tests
+//     keep matching during the migration.
 //   - confirm:       Step 3 yes/no.
 type fakePrompter struct {
 	pickedHarness    string

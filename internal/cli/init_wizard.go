@@ -15,11 +15,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/forge/fdh/pkg/adapters"
-	"github.com/forge/fdh/pkg/consumerlock"
-	"github.com/forge/fdh/pkg/consumermanifest"
-	"github.com/forge/fdh/pkg/gitignore"
 	"github.com/forge/fdh/pkg/hubregistry"
-	"github.com/forge/fdh/pkg/state"
 )
 
 // wizardInput is the data flowing from `runInitWizard` into the
@@ -444,38 +440,6 @@ func runInitWizard(
 	return agents, skills, installed, nil
 }
 
-// persistWizardSelection writes .fdh/manifest.yaml + .fdh/lock.yaml +
-// updates ~/.fdh/state.json so the wizard's choice is reproducible
-// across machines. Best-effort: errors are silently ignored to avoid
-// breaking the wizard happy path.
-func persistWizardSelection(rc *runContext, reg *hubregistry.Registry, skills []string, installedByFDH string) error {
-	m := &consumermanifest.Manifest{SchemaVersion: 1}
-	for _, name := range skills {
-		m.Skills = append(m.Skills, consumermanifest.Entry{Name: name})
-	}
-	if err := consumermanifest.Write(rc.ProjectRoot, m); err != nil {
-		return err
-	}
-	resolved, err := consumermanifest.Expand(m, reg, nil)
-	if err != nil {
-		return err
-	}
-	lock := consumerlock.Build(resolved, reg.HubCommit, timeNow(), "")
-	if err := consumerlock.Write(rc.ProjectRoot, lock); err != nil {
-		return err
-	}
-	managedPaths := collectManagedPathsForGitignore(rc.ProjectRoot, nil)
-	_ = gitignore.Apply(rc.ProjectRoot, managedPaths)
-	if rc.HomeDir != "" {
-		if s, sErr := state.Load(rc.HomeDir); sErr == nil {
-			s.UpsertProject(rc.ProjectRoot, state.ProjectEntry{ManagedPaths: managedPaths})
-			s.HubCache = state.HubCache{Commit: reg.HubCommit}
-			_ = state.Save(rc.HomeDir, s)
-		}
-	}
-	return nil
-}
-
 // timeNow is a small indirection so tests can stub if needed (none do yet).
 func timeNow() time.Time { return time.Now() }
 
@@ -514,14 +478,6 @@ func splitDefaultsAndExtras(all []hubregistry.ComponentEntry, agents []string) (
 	return
 }
 
-func skillNames(choices []skillChoice) []string {
-	out := make([]string, 0, len(choices))
-	for _, c := range choices {
-		out = append(out, c.Name)
-	}
-	return out
-}
-
 // resolveSkillSelection maps the user-given names to the registry,
 // returning the validated list and any unknown names so the caller
 // can surface a clear error.
@@ -543,17 +499,6 @@ func resolveSkillSelection(picked []string, catalog []hubregistry.ComponentEntry
 		}
 	}
 	return
-}
-
-func summariseSelection(agents, skills []string, dryRun bool) string {
-	var b strings.Builder
-	if dryRun {
-		b.WriteString("[dry-run] ")
-	}
-	fmt.Fprintf(&b, "Agents: %s\nSkills: %s",
-		strings.Join(agents, ", "),
-		strings.Join(skills, ", "))
-	return b.String()
 }
 
 func intersectKnown(want, known []string) []string {
