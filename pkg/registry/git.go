@@ -15,6 +15,7 @@ import (
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"gopkg.in/yaml.v3"
 
 	"github.com/forge/fdh/pkg/bundle"
 )
@@ -182,12 +183,51 @@ func (g *GitRegistry) checkoutRemoteHead(ctx context.Context, repo *gogit.Reposi
 }
 
 // Index implements Registry.Index.
+//
+// Resolution order, in priority:
+//
+//  1. <LocalPath>/index.json — the v1 wire shape produced by the portal
+//     (or by tests via internal/testutil.BuildRegistry). Strict JSON.
+//  2. <LocalPath>/hub/registry.yaml — the v2 source-of-truth catalog the
+//     hub repo edits directly. Parsed and synthesized into an Index so
+//     callers that don't (yet) talk to a portal can still read components
+//     from a direct git clone of the hub.
+//
+// (2) is the path that unblocks `fdh doctor`, `fdh search`, and
+// `fdh install` against a registry URL that points at the hub git repo
+// without an index.json published alongside (the common case for
+// pre-portal installs and air-gapped mirrors of the hub). It returns
+// the v2 Components view; normalize() then projects Skills for the
+// derived view callers may use.
+//
+// When index.json is present, its content wins — that path stays the
+// fastest and most stable (the portal serializes it). YAML fallback is
+// only invoked when index.json is absent.
 func (g *GitRegistry) Index(ctx context.Context) (Index, error) {
 	if err := g.ensureClone(ctx); err != nil {
 		return Index{}, err
 	}
 	g.refresh(ctx)
-	return readIndex(filepath.Join(g.LocalPath, "index.json"))
+
+	idxPath := filepath.Join(g.LocalPath, "index.json")
+	if _, err := os.Stat(idxPath); err == nil {
+		return readIndex(idxPath)
+	} else if !os.IsNotExist(err) {
+		return Index{}, fmt.Errorf("stat %s: %w", idxPath, err)
+	}
+
+	// index.json absent — try the hub v2 catalog.
+	yamlPath := filepath.Join(g.LocalPath, "hub", "registry.yaml")
+	if _, err := os.Stat(yamlPath); err == nil {
+		return readHubCatalog(yamlPath)
+	} else if !os.IsNotExist(err) {
+		return Index{}, fmt.Errorf("stat %s: %w", yamlPath, err)
+	}
+
+	return Index{}, fmt.Errorf(
+		"no catalog found in %s (looked for index.json and hub/registry.yaml)",
+		g.LocalPath,
+	)
 }
 
 // Sync ensures LocalPath holds a working tree of the remote at the tracked
@@ -387,6 +427,103 @@ func readIndex(path string) (Index, error) {
 	}
 	idx.normalize()
 	return idx, nil
+}
+
+// hubCatalog mirrors the v2 schema of <hub-clone>/hub/registry.yaml.
+// Kept private here (and duplicated in internal/portalapi/wire_handlers.go)
+// so this package stays import-cycle-clean and free of dependencies on
+// the portal layer.
+type hubCatalog struct {
+	SchemaVersion int            `yaml:"schema_version"`
+	HubVersion    string         `yaml:"hub_version"`
+	Components    []hubComponent `yaml:"components"`
+}
+
+// hubComponent is one entry under hubCatalog.Components.
+type hubComponent struct {
+	Name        string   `yaml:"name"`
+	Kind        string   `yaml:"kind"`
+	Description string   `yaml:"description"`
+	OwnerTeam   string   `yaml:"owner_team"`
+	Tags        []string `yaml:"tags,omitempty"`
+	Default     bool     `yaml:"default,omitempty"`
+	MinFDHVer   string   `yaml:"min_fdh_version,omitempty"`
+	AgentsSup   []string `yaml:"agents_supported,omitempty"`
+	Path        string   `yaml:"path"`
+}
+
+// readHubCatalog parses hub/registry.yaml and synthesizes a registry.Index
+// equivalent to what the portal would have emitted as index.json.
+//
+// Version/hash fields are populated with wire-protocol sentinels
+// ("latest" / empty) — the v2 catalog does not carry per-component
+// version metadata, and the version flow is owned by the per-component
+// frontmatter (read via Manifest()) or the wire-protocol HTTPRegistry.
+// Callers needing precise version/hash pairs MUST use one of those
+// transports; this YAML fallback exists so the *catalog listing*
+// (search, doctor.Index().Reachable, fdh install resolution) works
+// against a direct git clone of the hub.
+func readHubCatalog(path string) (Index, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Index{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	var cat hubCatalog
+	if err := yaml.Unmarshal(data, &cat); err != nil {
+		return Index{}, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if cat.SchemaVersion != 2 {
+		return Index{}, fmt.Errorf(
+			"%s: schema_version=%d (this fdh's YAML fallback supports schema_version=2 only)",
+			path, cat.SchemaVersion,
+		)
+	}
+	out := Index{
+		SchemaVersion: 2,
+		Registry:      "git+yaml",
+		Components:    make([]IndexEntry, 0, len(cat.Components)),
+	}
+	for _, c := range cat.Components {
+		out.Components = append(out.Components, IndexEntry{
+			Kind:          c.Kind,
+			Namespace:     deriveNamespaceFromOwnerTeam(c.OwnerTeam),
+			Name:          c.Name,
+			Description:   c.Description,
+			OwnerTeam:     c.OwnerTeam,
+			Tags:          c.Tags,
+			LatestVersion: "latest",
+			LatestHash:    "",
+			ScanStatus:    "none",
+		})
+	}
+	out.normalize()
+	return out, nil
+}
+
+// deriveNamespaceFromOwnerTeam mirrors portalapi.deriveNamespace: the
+// canonical hub-http-registry namespace rule. Lowercase, "_"→"-", drop
+// non-[a-z0-9-] chars, trim leading/trailing "-", fall back to
+// "unknown" when the input collapses to empty.
+//
+// Duplicated (not imported) so pkg/registry stays import-cycle-free from
+// internal/portalapi. If the canonical rule ever changes, grep for both
+// identifiers and update them together.
+func deriveNamespaceFromOwnerTeam(ownerTeam string) string {
+	s := strings.ToLower(strings.TrimSpace(ownerTeam))
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_':
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "unknown"
+	}
+	return out
 }
 
 func readManifest(path string) (Manifest, error) {
