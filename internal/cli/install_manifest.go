@@ -51,7 +51,11 @@ type ManifestComponent struct {
 // then writes the lock and updates the gitignore section.
 func runInstallManifest(cmd *cobra.Command, rc *runContext, info BuildInfo) error {
 	if rc.ProjectRoot == "" {
-		return Errorf(ExitInvalidUsage, "no project root detected; manifest-flow install requires a project directory")
+		return Errorf(ExitInvalidUsage,
+			"nothing to install: no component named and no project found here.\n"+
+				"  • install one component:  fdh install <namespace>/<name>   (e.g. fdh install dx-platform/spec-driven-development)\n"+
+				"  • browse what's available: fdh search <query>\n"+
+				"  • or run this from a project directory (one with a .git/ folder or a .fdh/manifest.yaml) to apply its manifest")
 	}
 
 	manifest, generatedFromLegacy, err := loadOrGenerateManifest(cmd, rc)
