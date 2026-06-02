@@ -25,12 +25,12 @@ type ValidateRegistryResult struct {
 func newValidateRegistryCmd(info BuildInfo) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate-registry [repo-root]",
-		Short: "Validate the hub's skills/registry.yaml against the registry contract",
-		Long: `Read skills/registry.yaml from the given repo root (default: current directory),
-parse it, and verify each entry against the rules of the hub-skills-registry
-spec: unique kebab-case names, paths exist on disk, agents_supported non-empty,
-min_fdh_version is valid semver, schema_version is supported, no orphan
-directories under skills/.
+		Short: "Validate the hub's hub/registry.yaml against the registry contract",
+		Long: `Read hub/registry.yaml from the given repo root (default: current directory;
+falls back to the legacy skills/registry.yaml mirror), parse it, and verify
+each entry against the rules of the hub-registry spec: unique kebab-case names,
+paths exist on disk, agents_supported non-empty, min_fdh_version is valid
+semver, schema_version is supported, no orphan component directories.
 
 Designed to be invoked both interactively (developer running locally) and as
 a CI step (replacing the Python validator the hub currently uses).`,

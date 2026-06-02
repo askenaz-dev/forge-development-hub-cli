@@ -32,7 +32,7 @@ type ListedSkill struct {
 func newListCmd(info BuildInfo) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List installed skills across detected agent directories",
+		Short: "List installed components across detected agent directories",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runList(cmd, args, info)
 		},

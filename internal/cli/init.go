@@ -80,8 +80,8 @@ asked to via --force.`,
 			return runInit(cmd, info)
 		},
 	}
-	cmd.Flags().String("registry-url", "", "remote URL of the skill registry (Git)")
-	cmd.Flags().String("registry-local", "", "absolute path to a local clone of the skill registry")
+	cmd.Flags().String("registry-url", "", "remote URL of the hub (Git)")
+	cmd.Flags().String("registry-local", "", "absolute path to a local clone of the hub")
 	cmd.Flags().String("scope", "", "default install scope: user | project | auto (default: project, rooted at the current directory)")
 	cmd.Flags().Bool("global", false, "install at user/home scope (~/.claude, …) instead of into the current project")
 	cmd.Flags().Bool("skip-doctor", false, "do not run doctor after configuring")

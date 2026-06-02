@@ -1,6 +1,6 @@
 # fdh
 
-Cross-platform CLI that installs spec-compliant [Agent Skills](https://agentskills.io) to four AI coding agents — Claude Code, GitHub Copilot, OpenAI Codex, OpenCode — from a shared Git-backed skill registry.
+Cross-platform CLI that installs **Forge harnesses** — curated bundles of skills, rules, agents, and hooks configured in the Forge platform — to four AI coding agents (Claude Code, GitHub Copilot, OpenAI Codex, OpenCode) from a shared Git-backed hub. Component bundles follow the open [Agent Skills](https://agentskills.io) format.
 
 This repository holds the **implementation**. The **specification** that governs every requirement here lives in the OpenSpec hub at [askenaz-dev/forge-development-hub](https://github.com/askenaz-dev/forge-development-hub):
 
