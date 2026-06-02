@@ -201,6 +201,20 @@ func isHTTPURL(u string) bool {
 	return strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://")
 }
 
+// applyLocalScope forces the project root to the current working directory,
+// regardless of whether it is a git repo. It backs the `--local` flag:
+// devs starting a project in a plain directory want components materialized
+// *here* (./.claude/…, ./.agents/…) — and, for init, a ./.fdh/manifest.yaml
+// created — rather than installed globally at user scope in their home.
+func applyLocalScope(rc *runContext) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return Errorf(ExitGenericFailure, "cannot determine current directory: %v", err)
+	}
+	rc.ProjectRoot = cwd
+	return nil
+}
+
 // detectProjectRoot walks up from CWD looking for the closest directory that
 // is a project anchor: a .git/ folder, or a .fdh/manifest.yaml that a prior
 // `fdh init`/`fdh install` materialized. Returns "" if none found.

@@ -83,6 +83,7 @@ asked to via --force.`,
 	cmd.Flags().String("registry-url", "", "remote URL of the skill registry (Git)")
 	cmd.Flags().String("registry-local", "", "absolute path to a local clone of the skill registry")
 	cmd.Flags().String("scope", "", "default install scope: user | project | auto")
+	cmd.Flags().Bool("local", false, "install into the current directory (creates ./.fdh/ here), even if it is not a git repo. Opposite of the global/home install used by default outside a project.")
 	cmd.Flags().Bool("skip-doctor", false, "do not run doctor after configuring")
 	cmd.Flags().Bool("force", false, "overwrite existing values (default: keep existing, only fill missing)")
 
@@ -99,6 +100,7 @@ func runInit(cmd *cobra.Command, info BuildInfo) error {
 	registryURL, _ := cmd.Flags().GetString("registry-url")
 	registryLocal, _ := cmd.Flags().GetString("registry-local")
 	scope, _ := cmd.Flags().GetString("scope")
+	local, _ := cmd.Flags().GetBool("local")
 	skipDoctor, _ := cmd.Flags().GetBool("skip-doctor")
 	force, _ := cmd.Flags().GetBool("force")
 	agentsFlag, _ := cmd.Flags().GetStringSlice("agents")
@@ -110,6 +112,10 @@ func runInit(cmd *cobra.Command, info BuildInfo) error {
 	if registryURL != "" && registryLocal != "" {
 		return Errorf(ExitInvalidUsage,
 			"--registry-url and --registry-local are mutually exclusive")
+	}
+	if local && strings.EqualFold(scope, "user") {
+		return Errorf(ExitInvalidUsage,
+			"--local conflicts with --scope user (--local installs into the current directory)")
 	}
 
 	// Decide what to apply. Existing values are kept unless --force is set.
@@ -177,6 +183,14 @@ func runInit(cmd *cobra.Command, info BuildInfo) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	rc, rcErr := buildRunContext(ctx, info, false)
+	if rcErr == nil && local {
+		// --local: pin the project root to the current directory so the
+		// wizard installs here (project scope) and writes ./.fdh/manifest.yaml,
+		// regardless of whether this is a git repo.
+		if lerr := applyLocalScope(rc); lerr != nil {
+			return lerr
+		}
+	}
 	hubURL := ""
 	if rcErr == nil {
 		hubURL = hubURLFromConfigOrFlag(rc)
@@ -381,9 +395,9 @@ func printInitInstalls(w io.Writer, r InitResult) {
 		}
 	}
 	if scope == "user" {
-		fmt.Fprintln(w, "\nThese were installed at user scope (your home), because no project")
-		fmt.Fprintln(w, "was detected here. To install into a project instead, run init from a")
-		fmt.Fprintln(w, "directory with a .git/ folder (or run `git init` first).")
+		fmt.Fprintln(w, "\nThese were installed at user scope (your home), so every project on this")
+		fmt.Fprintln(w, "machine can read them. To install into the current directory instead,")
+		fmt.Fprintln(w, "re-run with --local (works even without git):  fdh init --local")
 	}
 }
 

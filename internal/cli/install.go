@@ -57,6 +57,7 @@ func newInstallCmd(info BuildInfo) *cobra.Command {
 	cmd.Flags().StringSlice("agent", nil, "agent id to target (may be repeated). Default: every detected agent.")
 	cmd.Flags().String("kind", "", "component kind: skill|rule|agent|hook. Default: inferred from the registry index (required only when a name is ambiguous across kinds).")
 	cmd.Flags().String("scope", "auto", "install scope: user|project|auto")
+	cmd.Flags().Bool("local", false, "install into the current directory, even if it is not a git repo (shorthand for project scope rooted here)")
 	cmd.Flags().Bool("frozen", false, "manifest-flow only: fail if the lock does not satisfy the manifest")
 	cmd.Flags().Bool("no-frozen", false, "manifest-flow only: opt out of CI auto-frozen behavior")
 	cmd.Flags().String("allow-yanked", "", "explicit escape hatch: install the named yanked version despite lifecycle exclusion")
@@ -87,6 +88,17 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 	rc, err := buildRunContext(ctx, info, verbose)
 	if err != nil {
 		return err
+	}
+
+	// --local pins the project root to the current directory so install
+	// materializes here (project scope) even without a git repo.
+	if local, _ := cmd.Flags().GetBool("local"); local {
+		if scopeStr, _ := cmd.Flags().GetString("scope"); strings.EqualFold(scopeStr, "user") {
+			return Errorf(ExitInvalidUsage, "--local conflicts with --scope user")
+		}
+		if lerr := applyLocalScope(rc); lerr != nil {
+			return lerr
+		}
 	}
 
 	// No argument: manifest-flow path. Reads .fdh/manifest.yaml,
