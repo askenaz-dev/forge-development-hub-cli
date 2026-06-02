@@ -271,22 +271,52 @@ func (g *GitRegistry) Sync(ctx context.Context) error {
 }
 
 // Manifest implements Registry.Manifest.
+//
+// Equivalent to ManifestByKind(ctx, "skill", namespace, name).
 func (g *GitRegistry) Manifest(ctx context.Context, namespace, name string) (Manifest, error) {
+	return g.ManifestByKind(ctx, "skill", namespace, name)
+}
+
+// ManifestByKind implements KindAware.ManifestByKind. It reads
+// <LocalPath>/<kind-plural>/<ns>/<name>/manifest.json from the clone,
+// mirroring the directory layout the producer writes and HTTPRegistry
+// serves.
+func (g *GitRegistry) ManifestByKind(ctx context.Context, kind, namespace, name string) (Manifest, error) {
+	plural := kindPlural(kind)
+	if plural == "" {
+		return Manifest{}, fmt.Errorf("unknown kind %q (want skill|rule|agent|hook)", kind)
+	}
 	if err := g.ensureClone(ctx); err != nil {
 		return Manifest{}, err
 	}
 	g.refresh(ctx)
-	p := filepath.Join(g.LocalPath, "skills", namespace, name, "manifest.json")
+	p := filepath.Join(g.LocalPath, plural, namespace, name, "manifest.json")
 	return readManifest(p)
 }
 
 // FetchBundle implements Registry.FetchBundle.
+//
+// Equivalent to FetchBundleByKind(ctx, "skill", namespace, name, version).
 func (g *GitRegistry) FetchBundle(ctx context.Context, namespace, name, version string) (BundlePath, error) {
+	return g.FetchBundleByKind(ctx, "skill", namespace, name, version)
+}
+
+// FetchBundleByKind implements KindAware.FetchBundleByKind. It extends
+// FetchBundle with explicit kind routing: bundles live under
+// <LocalPath>/<kind-plural>/<ns>/<name>/versions/<v>/. Hash verification
+// is kind-generic — non-skill kinds (rule/agent/hook) carry a per-kind
+// entrypoint (RULE.md/AGENT.md/HOOK.md) and would fail bundle.Load's
+// SKILL.md requirement, so they are hashed via the loader-free HashDir.
+func (g *GitRegistry) FetchBundleByKind(ctx context.Context, kind, namespace, name, version string) (BundlePath, error) {
+	plural := kindPlural(kind)
+	if plural == "" {
+		return BundlePath{}, fmt.Errorf("unknown kind %q (want skill|rule|agent|hook)", kind)
+	}
 	if err := g.ensureClone(ctx); err != nil {
 		return BundlePath{}, err
 	}
 	g.refresh(ctx)
-	versionDir := filepath.Join(g.LocalPath, "skills", namespace, name, "versions", version)
+	versionDir := filepath.Join(g.LocalPath, plural, namespace, name, "versions", version)
 	bundleTar := filepath.Join(versionDir, "bundle.tar.gz")
 	sumFile := filepath.Join(versionDir, "bundle.sha256")
 
@@ -311,8 +341,9 @@ func (g *GitRegistry) FetchBundle(ctx context.Context, namespace, name, version 
 
 	// The tarball is expected to contain a single top-level directory
 	// (the bundle/ folder produced by publish). Locate it and rename to
-	// the skill's name so bundle.Validate sees a directory that matches
-	// the SKILL.md frontmatter.
+	// the component's name so bundle.Validate (skills) sees a directory
+	// that matches the frontmatter, and so the extracted path's basename
+	// is the component name for all kinds.
 	extractedBundle, err := locateBundleDir(tmp)
 	if err != nil {
 		_ = cleanup()
@@ -327,16 +358,11 @@ func (g *GitRegistry) FetchBundle(ctx context.Context, namespace, name, version 
 		extractedBundle = renamed
 	}
 
-	// Compute canonical hash and compare with bundle.sha256.
-	loaded, err := bundle.Load(extractedBundle)
+	// Compute canonical hash (kind-generic) and compare with bundle.sha256.
+	got, err := canonicalBundleHash(kind, extractedBundle)
 	if err != nil {
 		_ = cleanup()
-		return BundlePath{}, fmt.Errorf("load extracted bundle: %w", err)
-	}
-	got, err := loaded.Hash()
-	if err != nil {
-		_ = cleanup()
-		return BundlePath{}, fmt.Errorf("hash extracted bundle: %w", err)
+		return BundlePath{}, err
 	}
 	sumBytes, err := os.ReadFile(sumFile)
 	if err != nil {
@@ -524,6 +550,32 @@ func deriveNamespaceFromOwnerTeam(ownerTeam string) string {
 		return "unknown"
 	}
 	return out
+}
+
+// canonicalBundleHash computes the canonical content hash of an extracted
+// bundle directory. For skills it goes through bundle.Load (which also
+// enforces the SKILL.md entrypoint invariant); for non-skill kinds —
+// rule/agent/hook, whose entrypoints are RULE.md/AGENT.md/HOOK.md — it
+// uses the loader-free bundle.HashDir, which produces the same digest as
+// (*Bundle).Hash for an identical file set. Shared by GitRegistry and
+// HTTPRegistry so both transports verify bundles identically.
+func canonicalBundleHash(kind, dir string) (string, error) {
+	if kind == "" || kind == "skill" {
+		loaded, err := bundle.Load(dir)
+		if err != nil {
+			return "", fmt.Errorf("load extracted bundle: %w", err)
+		}
+		h, err := loaded.Hash()
+		if err != nil {
+			return "", fmt.Errorf("hash extracted bundle: %w", err)
+		}
+		return h, nil
+	}
+	h, err := bundle.HashDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("hash extracted bundle: %w", err)
+	}
+	return h, nil
 }
 
 func readManifest(path string) (Manifest, error) {

@@ -135,6 +135,104 @@ func BuildRegistry(t *testing.T, root string, specs []SkillSpec) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "index.json"), indexBytes, 0o644))
 }
 
+// ComponentSpec describes a single component of any kind for
+// BuildKindRegistry. Mirrors SkillSpec but carries an explicit Kind, and
+// its entrypoint may be RULE.md/AGENT.md/HOOK.md instead of SKILL.md.
+type ComponentSpec struct {
+	Kind        string // skill|rule|agent|hook
+	Namespace   string
+	Name        string
+	Version     string
+	Description string
+	OwnerTeam   string
+	Tags        []string
+	// Files maps bundle-relative paths to contents. It MUST include the
+	// kind's entrypoint (SKILL.md/RULE.md/AGENT.md/HOOK.md); helpers do not
+	// inject one, so tests can produce intentionally broken bundles.
+	Files map[string]string
+}
+
+// BuildKindRegistry creates a built-registry tree under root containing
+// components of any kind — matching what the producer publishes and what the
+// kind-aware GitRegistry/HTTPRegistry read:
+//
+//	root/index.json                                       (v2, components[])
+//	root/<plural>/<ns>/<name>/manifest.json
+//	root/<plural>/<ns>/<name>/versions/<ver>/bundle.tar.gz
+//	root/<plural>/<ns>/<name>/versions/<ver>/bundle.sha256
+//
+// Hashes use bundle.HashDir (loader-free, kind-generic) so non-skill kinds
+// — whose entrypoint is RULE.md/AGENT.md/HOOK.md, not SKILL.md — hash
+// correctly without tripping bundle.Load's SKILL.md requirement.
+func BuildKindRegistry(t *testing.T, root string, specs []ComponentSpec) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(root, 0o755))
+
+	components := []map[string]any{}
+	for _, s := range specs {
+		plural := hubKindPlural(s.Kind)
+		compDir := filepath.Join(root, plural, s.Namespace, s.Name)
+		versionDir := filepath.Join(compDir, "versions", s.Version)
+		bundleDir := filepath.Join(versionDir, "bundle")
+		require.NoError(t, os.MkdirAll(bundleDir, 0o755))
+
+		for rel, content := range s.Files {
+			p := filepath.Join(bundleDir, filepath.FromSlash(rel))
+			require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o755))
+			require.NoError(t, os.WriteFile(p, []byte(content), 0o644))
+		}
+
+		hash, err := bundle.HashDir(bundleDir)
+		require.NoError(t, err, "hash fixture component %s/%s/%s", s.Kind, s.Namespace, s.Name)
+
+		tarPath := filepath.Join(versionDir, "bundle.tar.gz")
+		require.NoError(t, writeTarGz(tarPath, bundleDir, "bundle"))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(versionDir, "bundle.sha256"),
+			[]byte(hash+"  bundle.tar.gz\n"), 0o644))
+
+		manifestBytes, _ := json.MarshalIndent(map[string]any{
+			"schema_version": 1,
+			"namespace":      s.Namespace,
+			"name":           s.Name,
+			"description":    s.Description,
+			"owner_team":     s.OwnerTeam,
+			"tags":           s.Tags,
+			"latest":         s.Version,
+			"versions": []map[string]any{
+				{
+					"version":      s.Version,
+					"content_hash": hash,
+					"published_at": "2026-05-22T12:00:00Z",
+					"published_by": "fixture@test",
+					"scan_status":  "pass",
+				},
+			},
+		}, "", "  ")
+		require.NoError(t, os.WriteFile(
+			filepath.Join(compDir, "manifest.json"), manifestBytes, 0o644))
+
+		components = append(components, map[string]any{
+			"kind":           s.Kind,
+			"namespace":      s.Namespace,
+			"name":           s.Name,
+			"description":    s.Description,
+			"owner_team":     s.OwnerTeam,
+			"tags":           s.Tags,
+			"latest_version": s.Version,
+			"latest_hash":    hash,
+			"scan_status":    "pass",
+		})
+	}
+
+	indexBytes, _ := json.MarshalIndent(map[string]any{
+		"schema_version": 2,
+		"registry":       "file://" + filepath.ToSlash(root),
+		"components":     components,
+	}, "", "  ")
+	require.NoError(t, os.WriteFile(filepath.Join(root, "index.json"), indexBytes, 0o644))
+}
+
 // SHA256OfFile returns the lowercase hex SHA-256 of the named file.
 func SHA256OfFile(t *testing.T, path string) string {
 	t.Helper()

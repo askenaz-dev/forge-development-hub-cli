@@ -46,8 +46,8 @@ type InstallWriteInfo struct {
 
 func newInstallCmd(info BuildInfo) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "install [<skill>[@version]]",
-		Short: "Install a skill from the registry, or apply .fdh/manifest.yaml when no argument is given",
+		Use:   "install [<component>[@version]]",
+		Short: "Install a component (skill|rule|agent|hook) from the registry, or apply .fdh/manifest.yaml when no argument is given",
 		Long:  installHelp,
 		Args:  cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -55,6 +55,7 @@ func newInstallCmd(info BuildInfo) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringSlice("agent", nil, "agent id to target (may be repeated). Default: every detected agent.")
+	cmd.Flags().String("kind", "", "component kind: skill|rule|agent|hook. Default: inferred from the registry index (required only when a name is ambiguous across kinds).")
 	cmd.Flags().String("scope", "auto", "install scope: user|project|auto")
 	cmd.Flags().Bool("frozen", false, "manifest-flow only: fail if the lock does not satisfy the manifest")
 	cmd.Flags().Bool("no-frozen", false, "manifest-flow only: opt out of CI auto-frozen behavior")
@@ -62,14 +63,19 @@ func newInstallCmd(info BuildInfo) *cobra.Command {
 	return cmd
 }
 
-const installHelp = `Install a skill from the configured registry.
+const installHelp = `Install a component from the configured registry.
+
+A component is a skill, rule, agent, or hook. The kind is inferred from
+the registry index; pass --kind when a name is published under more than
+one kind.
 
 By default, the bundle is installed to every detected agent at the
 appropriate scope (project if a project root is detectable, otherwise
 user). Use --agent <id> (repeatable) to target a specific agent or
---scope user|project to override the default.
+--scope user|project to override the default. Agents without an adapter
+for the component's kind (e.g. the 'agent' kind on codex) are skipped.
 
-A skill reference is "<namespace>/<name>" optionally followed by
+A component reference is "<namespace>/<name>" optionally followed by
 "@<version>"; omitting the version installs the latest published version
 recorded in the registry index.`
 
@@ -105,8 +111,17 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 		return err
 	}
 
-	// Resolve registry data.
-	manifest, err := rc.Registry.Manifest(rc.Ctx, namespace, name)
+	// Resolve the component kind (skill|rule|agent|hook). An explicit
+	// --kind wins; otherwise it is inferred from the registry index.
+	kindFlag, _ := cmd.Flags().GetString("kind")
+	kind, err := resolveComponentKind(rc.Ctx, rc.Registry, kindFlag, namespace, name)
+	if err != nil {
+		return err
+	}
+
+	// Resolve registry data (kind-aware; falls back to skill-only methods
+	// on transports that don't implement KindAware).
+	manifest, err := manifestByKind(rc.Ctx, rc.Registry, kind, namespace, name)
 	if err != nil {
 		var unreach registry.RegistryUnreachable
 		if errors.As(err, &unreach) {
@@ -138,8 +153,8 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: installing YANKED version %s/%s@%s under --allow-yanked escape hatch\n", namespace, name, version)
 	}
 
-	// Fetch and hash-verify the bundle.
-	bp, err := rc.Registry.FetchBundle(rc.Ctx, namespace, name, version)
+	// Fetch and hash-verify the bundle (kind-aware).
+	bp, err := fetchBundleByKind(rc.Ctx, rc.Registry, kind, namespace, name, version)
 	if err != nil {
 		var unreach registry.RegistryUnreachable
 		if errors.As(err, &unreach) {
@@ -160,6 +175,14 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 	signer, sigErr := signing.Check(rc.Ctx, signing.PolicyFromEnv(), bp.Hash, sigField, signing.CosignVerifierFromEnv())
 	if sigErr != nil {
 		return Wrap(ExitGenericFailure, fmt.Errorf("signature check for %s/%s@%s: %w", namespace, name, version, sigErr))
+	}
+
+	// Non-skill kinds (rule/agent/hook) materialize through their own
+	// adapter family — they have no SKILL.md to load/validate/lint, and
+	// each adapter writes its own target file + managed marker. Skills
+	// continue through the load/validate/lint/fan-out path below.
+	if kind != managed.KindSkill {
+		return installNonSkillRef(cmd, rc, info, kind, namespace, name, version, bp, scope)
 	}
 
 	// Load the bundle, validate, lint.
@@ -409,27 +432,9 @@ func parseSkillRef(ref string) (namespace, name, version string, err error) {
 // resolveTargets computes the final agent list given the user's --agent flags,
 // the detected agents on the host, and the skill's compatibility allowlist.
 func resolveTargets(requested []string, rc *runContext, doc bundle.SkillMDDoc) ([]string, error) {
-	detected := detectedAgentIDs(rc)
-
-	candidate := requested
-	if len(candidate) == 0 {
-		candidate = detected
-	}
-	if len(candidate) == 0 {
-		return nil, Errorf(ExitNoAgent, "no agents requested and none detected; run 'fdh doctor'")
-	}
-
-	// Filter by the manifest's known agents.
-	known := map[string]struct{}{}
-	for _, id := range rc.Adapters.AgentIDs() {
-		known[id] = struct{}{}
-	}
-	var filtered []string
-	for _, id := range candidate {
-		if _, ok := known[id]; !ok {
-			return nil, Errorf(ExitInvalidUsage, "unknown agent id %q (known: %s)", id, strings.Join(rc.Adapters.AgentIDs(), ","))
-		}
-		filtered = append(filtered, id)
+	filtered, err := resolveAgentTargets(requested, rc)
+	if err != nil {
+		return nil, err
 	}
 
 	// Apply compatibility filter for non-portable skills.
@@ -449,6 +454,209 @@ func resolveTargets(requested []string, rc *runContext, doc bundle.SkillMDDoc) (
 
 	sort.Strings(filtered)
 	return filtered, nil
+}
+
+// resolveAgentTargets returns the sorted set of target agent ids: the
+// requested ids (or every detected agent when none requested), validated
+// against the known adapter ids. No skill-compatibility filter is applied
+// — non-skill kinds have no SKILL.md; the per-(kind,agent) adapter lookup
+// skips agents that have no adapter for the kind.
+func resolveAgentTargets(requested []string, rc *runContext) ([]string, error) {
+	candidate := requested
+	if len(candidate) == 0 {
+		candidate = detectedAgentIDs(rc)
+	}
+	if len(candidate) == 0 {
+		return nil, Errorf(ExitNoAgent, "no agents requested and none detected; run 'fdh doctor'")
+	}
+	known := map[string]struct{}{}
+	for _, id := range rc.Adapters.AgentIDs() {
+		known[id] = struct{}{}
+	}
+	var filtered []string
+	for _, id := range candidate {
+		if _, ok := known[id]; !ok {
+			return nil, Errorf(ExitInvalidUsage, "unknown agent id %q (known: %s)", id, strings.Join(rc.Adapters.AgentIDs(), ","))
+		}
+		filtered = append(filtered, id)
+	}
+	sort.Strings(filtered)
+	return filtered, nil
+}
+
+// knownKind reports whether k is one of the four component kinds.
+func knownKind(k string) bool {
+	switch k {
+	case managed.KindSkill, managed.KindRule, managed.KindAgent, managed.KindHook:
+		return true
+	}
+	return false
+}
+
+// resolveComponentKind determines the kind of namespace/name. An explicit
+// --kind flag wins (validated); otherwise the registry index is consulted.
+// A name present under multiple kinds is ambiguous and requires --kind.
+func resolveComponentKind(ctx context.Context, reg registry.Registry, kindFlag, namespace, name string) (string, error) {
+	if kindFlag != "" {
+		if !knownKind(kindFlag) {
+			return "", Errorf(ExitInvalidUsage, "unknown --kind %q (want skill|rule|agent|hook)", kindFlag)
+		}
+		return kindFlag, nil
+	}
+	idx, err := reg.Index(ctx)
+	if err != nil {
+		var unreach registry.RegistryUnreachable
+		if errors.As(err, &unreach) {
+			return "", Wrap(ExitRegistryUnreach, err)
+		}
+		return "", Wrap(ExitGenericFailure, fmt.Errorf("read registry index: %w", err))
+	}
+	seen := map[string]struct{}{}
+	var kinds []string
+	for _, e := range idx.Components {
+		if e.Name != name {
+			continue
+		}
+		if namespace != "" && e.Namespace != namespace {
+			continue
+		}
+		k := e.Kind
+		if k == "" {
+			k = managed.KindSkill
+		}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		kinds = append(kinds, k)
+	}
+	switch len(kinds) {
+	case 0:
+		// Not found in the index. Default to skill so the downstream
+		// manifest read produces the precise "not found" diagnostic and
+		// pre-index registries (YAML fallback without per-kind dirs)
+		// keep their existing skill-only behavior.
+		return managed.KindSkill, nil
+	case 1:
+		return kinds[0], nil
+	default:
+		sort.Strings(kinds)
+		return "", Errorf(ExitInvalidUsage,
+			"%s/%s is ambiguous across kinds (%s); pass --kind to disambiguate",
+			namespace, name, strings.Join(kinds, ", "))
+	}
+}
+
+// manifestByKind reads the per-component manifest using the kind-aware
+// transport method when available, falling back to the skill-only
+// Registry.Manifest for skills (and erroring for non-skill kinds on a
+// transport that is not KindAware).
+func manifestByKind(ctx context.Context, reg registry.Registry, kind, namespace, name string) (registry.Manifest, error) {
+	if kind == "" || kind == managed.KindSkill {
+		return reg.Manifest(ctx, namespace, name)
+	}
+	ka, ok := reg.(registry.KindAware)
+	if !ok {
+		return registry.Manifest{}, Errorf(ExitInvalidUsage,
+			"this registry transport is skill-only and cannot install kind %q", kind)
+	}
+	return ka.ManifestByKind(ctx, kind, namespace, name)
+}
+
+// fetchBundleByKind fetches+verifies a bundle using the kind-aware
+// transport method when available, falling back to the skill-only
+// Registry.FetchBundle for skills.
+func fetchBundleByKind(ctx context.Context, reg registry.Registry, kind, namespace, name, version string) (registry.BundlePath, error) {
+	if kind == "" || kind == managed.KindSkill {
+		return reg.FetchBundle(ctx, namespace, name, version)
+	}
+	ka, ok := reg.(registry.KindAware)
+	if !ok {
+		return registry.BundlePath{}, Errorf(ExitInvalidUsage,
+			"this registry transport is skill-only and cannot install kind %q", kind)
+	}
+	return ka.FetchBundleByKind(ctx, kind, namespace, name, version)
+}
+
+// installNonSkillRef materializes a rule/agent/hook component (already
+// fetched + hash-verified into bp) into every target agent that has an
+// adapter for the kind. Agents without an adapter for the kind are skipped
+// per-pair (not an error). Mirrors the skill fan-out's reporting,
+// .gitignore update, and JSON/table output.
+func installNonSkillRef(
+	cmd *cobra.Command,
+	rc *runContext,
+	info BuildInfo,
+	kind, namespace, name, version string,
+	bp registry.BundlePath,
+	scope adapters.Scope,
+) error {
+	requested, _ := cmd.Flags().GetStringSlice("agent")
+	targets, err := resolveAgentTargets(requested, rc)
+	if err != nil {
+		return err
+	}
+
+	opts := adapters.InstallOpts{
+		SkillName:      name,
+		ProjectRoot:    rc.ProjectRoot,
+		HomeDir:        rc.HomeDir,
+		Scope:          scope,
+		HubVersion:     version,
+		HubCommit:      "", // single-ref install doesn't know the hub commit
+		InstalledByFDH: info.Version,
+	}
+
+	writes := make([]InstallWriteInfo, 0, len(targets))
+	applied := make([]string, 0, len(targets))
+	for _, agentID := range targets {
+		res, mErr := materializeComponent(kind, agentID, bp.Path, opts)
+		if mErr != nil {
+			if errors.Is(mErr, os.ErrPermission) {
+				return Wrap(ExitPermission, fmt.Errorf("install %s/%s for %s: %w", namespace, name, agentID, mErr))
+			}
+			return Wrap(ExitGenericFailure, fmt.Errorf("install %s/%s for %s: %w", namespace, name, agentID, mErr))
+		}
+		if res == nil {
+			continue // this kind has no adapter for this agent (e.g. agent kind on codex)
+		}
+		writes = append(writes, InstallWriteInfo{Path: res.TargetPath, Agents: []string{agentID}})
+		applied = append(applied, agentID)
+	}
+	if len(writes) == 0 {
+		return Errorf(ExitNoAgent,
+			"no targeted agent has an adapter for kind %q (%s/%s)", kind, namespace, name)
+	}
+
+	gitignoreUpdated := false
+	if scope == adapters.ScopeProject && rc.ProjectRoot != "" {
+		managedPaths := collectManagedPathsForGitignore(rc.ProjectRoot, writes)
+		if err := gitignore.Apply(rc.ProjectRoot, managedPaths); err != nil {
+			if errors.Is(err, os.ErrPermission) {
+				return Wrap(ExitPermission, fmt.Errorf("update .gitignore: %w", err))
+			}
+			return Wrap(ExitGenericFailure, fmt.Errorf("update .gitignore: %w", err))
+		}
+		gitignoreUpdated = true
+	}
+
+	result := InstallResult{
+		Skill:            fmt.Sprintf("%s/%s", namespace, name),
+		Namespace:        namespace,
+		Name:             name,
+		Version:          version,
+		ContentHash:      bp.Hash,
+		Scope:            string(scope),
+		Registry:         rc.Registry.Source(),
+		TargetAgents:     applied,
+		Writes:           writes,
+		MarkerFilename:   managed.Filename,
+		GitignoreUpdated: gitignoreUpdated,
+	}
+	if outputMode(cmd) == "json" {
+		return emitJSON(cmd.OutOrStdout(), result)
+	}
+	return printInstallTable(cmd.OutOrStdout(), result)
 }
 
 // detectedAgentIDs runs the manifest's probes and returns the IDs of agents
