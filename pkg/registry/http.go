@@ -18,8 +18,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/forge/fdh/pkg/bundle"
 )
 
 // HTTPRegistry is a Registry implementation backed by a static-file HTTP
@@ -275,15 +273,10 @@ func (r *HTTPRegistry) FetchBundleByKind(ctx context.Context, kind, namespace, n
 		extracted = renamed
 	}
 
-	loaded, err := bundle.Load(extracted)
+	got, err := canonicalBundleHash(kind, extracted)
 	if err != nil {
 		_ = cleanupTmp()
-		return BundlePath{}, fmt.Errorf("load extracted bundle: %w", err)
-	}
-	got, err := loaded.Hash()
-	if err != nil {
-		_ = cleanupTmp()
-		return BundlePath{}, fmt.Errorf("hash extracted bundle: %w", err)
+		return BundlePath{}, err
 	}
 	if got != expectedSHA {
 		_ = cleanupTmp()

@@ -173,6 +173,92 @@ func TestGitRegistry_MissingLocalPath(t *testing.T) {
 	assert.ErrorAs(t, err, &unreach)
 }
 
+// buildKindFixtureRegistry builds a built-registry tree with one component
+// of each non-skill kind (entrypoints RULE.md/AGENT.md/HOOK.md, no SKILL.md)
+// plus a skill, to exercise the kind-aware reads.
+func buildKindFixtureRegistry(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	testutil.BuildKindRegistry(t, root, []testutil.ComponentSpec{
+		{
+			Kind: "rule", Namespace: "dx", Name: "no-console-log", Version: "1.0.0",
+			Description: "No console.log.", OwnerTeam: "dx",
+			Files: map[string]string{"RULE.md": "---\nname: no-console-log\n---\n\nDo not use console.log.\n"},
+		},
+		{
+			Kind: "agent", Namespace: "dx", Name: "pr-writer", Version: "2.1.0",
+			Description: "Writes PRs.", OwnerTeam: "dx",
+			Files: map[string]string{"AGENT.md": "---\nname: pr-writer\n---\n\nWrite a PR.\n"},
+		},
+		{
+			Kind: "hook", Namespace: "dx", Name: "session-start", Version: "1.0.0",
+			Description: "Runs on session start.", OwnerTeam: "dx",
+			Files: map[string]string{"HOOK.md": "---\nname: session-start\n---\n\nRun fdh doctor.\n"},
+		},
+	})
+	return root
+}
+
+func TestGitRegistry_ImplementsKindAware(t *testing.T) {
+	var r registry.Registry = newGitRegistry(t, t.TempDir())
+	_, ok := r.(registry.KindAware)
+	assert.True(t, ok, "GitRegistry must satisfy registry.KindAware")
+}
+
+func TestGitRegistry_ManifestByKind_NonSkill(t *testing.T) {
+	r := newGitRegistry(t, buildKindFixtureRegistry(t))
+	m, err := r.ManifestByKind(context.Background(), "agent", "dx", "pr-writer")
+	require.NoError(t, err)
+	assert.Equal(t, "pr-writer", m.Name)
+	assert.Equal(t, "2.1.0", m.Latest)
+}
+
+func TestGitRegistry_ManifestByKind_UnknownKind(t *testing.T) {
+	r := newGitRegistry(t, buildKindFixtureRegistry(t))
+	_, err := r.ManifestByKind(context.Background(), "banana", "dx", "pr-writer")
+	require.Error(t, err)
+}
+
+func TestGitRegistry_FetchBundleByKind_NonSkill(t *testing.T) {
+	root := buildKindFixtureRegistry(t)
+	r := newGitRegistry(t, root)
+
+	for _, tc := range []struct {
+		kind, name, entrypoint string
+	}{
+		{"rule", "no-console-log", "RULE.md"},
+		{"agent", "pr-writer", "AGENT.md"},
+		{"hook", "session-start", "HOOK.md"},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			m, err := r.ManifestByKind(context.Background(), tc.kind, "dx", tc.name)
+			require.NoError(t, err)
+			bp, err := r.FetchBundleByKind(context.Background(), tc.kind, "dx", tc.name, m.Latest)
+			require.NoError(t, err)
+			defer bp.Cleanup()
+
+			// The kind's entrypoint (not SKILL.md) is present, and the
+			// loader-free hash matches the recorded content hash.
+			_, statErr := os.Stat(filepath.Join(bp.Path, tc.entrypoint))
+			require.NoError(t, statErr, "expected %s in extracted bundle", tc.entrypoint)
+			assert.Equal(t, m.FindVersion(m.Latest).ContentHash, bp.Hash)
+		})
+	}
+}
+
+func TestGitRegistry_FetchBundleByKind_HashMismatch(t *testing.T) {
+	root := buildKindFixtureRegistry(t)
+	r := newGitRegistry(t, root)
+	sumFile := filepath.Join(root, "rules", "dx", "no-console-log", "versions", "1.0.0", "bundle.sha256")
+	require.NoError(t, os.WriteFile(sumFile,
+		[]byte("0000000000000000000000000000000000000000000000000000000000000000  bundle.tar.gz\n"), 0o644))
+
+	_, err := r.FetchBundleByKind(context.Background(), "rule", "dx", "no-console-log", "1.0.0")
+	require.Error(t, err)
+	var hm registry.HashMismatch
+	assert.ErrorAs(t, err, &hm)
+}
+
 func TestGitRegistry_StrictJSON_RejectsUnknownFields(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "index.json"),

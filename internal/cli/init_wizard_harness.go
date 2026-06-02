@@ -312,7 +312,17 @@ func installOneRef(
 		InstalledByFDH: installedByFDH,
 		DryRun:         dryRun,
 	}
-	switch r.Kind {
+	return materializeComponent(r.Kind, agentID, srcDir, opts)
+}
+
+// materializeComponent routes one (kind, agent) pair to the right adapter
+// family and runs its Install. Returns (nil, nil) when the kind has no
+// adapter for that agent (e.g. the `agent` kind on codex) — callers skip
+// the pair without treating it as an error. Shared by the wizard/manifest
+// flow (installOneRef) and the single-ref `fdh install <ref>` path so both
+// materialize every kind identically.
+func materializeComponent(kind, agentID, srcDir string, opts adapters.InstallOpts) (*adapters.InstallResult, error) {
+	switch kind {
 	case managed.KindSkill:
 		a := adapters.SkillAdapterByID(agentID)
 		if a == nil {
@@ -354,7 +364,7 @@ func installOneRef(
 		}
 		return &res, nil
 	}
-	return nil, fmt.Errorf("unknown kind %q", r.Kind)
+	return nil, fmt.Errorf("unknown kind %q", kind)
 }
 
 // persistWizardSelectionV2 writes a kind-aware .fdh/manifest.yaml +
