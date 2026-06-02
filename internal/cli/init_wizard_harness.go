@@ -203,6 +203,9 @@ func summariseComponentSelection(
 	harness string,
 	agents []string,
 	refs []componentRef,
+	scope adapters.Scope,
+	root string,
+	gitWarn string,
 	dryRun bool,
 ) string {
 	var b strings.Builder
@@ -228,6 +231,14 @@ func summariseComponentSelection(
 		}
 		sort.Strings(names)
 		fmt.Fprintf(&b, "%-7s: %s\n", k+"s", strings.Join(names, ", "))
+	}
+	fmt.Fprintf(&b, "Scope:   %s", scope)
+	if scope == adapters.ScopeProject && root != "" {
+		fmt.Fprintf(&b, " (%s)", root)
+	}
+	b.WriteString("\n")
+	if gitWarn != "" {
+		fmt.Fprintf(&b, "%s\n", gitWarn)
 	}
 	return b.String()
 }
@@ -367,21 +378,10 @@ func materializeComponent(kind, agentID, srcDir string, opts adapters.InstallOpt
 	return nil, fmt.Errorf("unknown kind %q", kind)
 }
 
-// persistWizardSelectionV2 writes a kind-aware .fdh/manifest.yaml +
-// .fdh/lock.yaml + ~/.fdh/state.json entry for the wizard's choices.
-// Replaces persistWizardSelection: the v1 version only knew skills.
-//
-// The harness name is recorded so `fdh switch <other>` (and the
-// downstream manifest-flow `fdh install`) sees a coherent declarative
-// state to diff against.
-func persistWizardSelectionV2(
-	rc *runContext,
-	reg *hubregistry.Registry,
-	harnessName string,
-	refs []componentRef,
-	installedByFDH string,
-) error {
-	_ = installedByFDH
+// buildWizardManifest assembles the kind-aware consumer manifest from the
+// wizard's harness + component selection. Shared by writeWizardManifest and
+// finalizeWizardInstall so the manifest the wizard writes round-trips cleanly.
+func buildWizardManifest(harnessName string, refs []componentRef) *consumermanifest.Manifest {
 	m := &consumermanifest.Manifest{
 		SchemaVersion: 1,
 		Harness:       harnessName,
@@ -399,12 +399,33 @@ func persistWizardSelectionV2(
 			m.Hooks = append(m.Hooks, ent)
 		}
 	}
-	if err := consumermanifest.Write(rc.ProjectRoot, m); err != nil {
-		return err
-	}
-	// Harness lookup for Expand. Mirrors install_manifest.go's
-	// harnessLookup wiring so the manifest the wizard wrote round-trips
-	// cleanly through the resolver.
+	return m
+}
+
+// writeWizardManifest writes ONLY .fdh/manifest.yaml — the declarative intent.
+// This is the "configure once" half, written whether or not the developer
+// materializes now. The lock + state are produced later by finalizeWizardInstall.
+func writeWizardManifest(rc *runContext, harnessName string, refs []componentRef) error {
+	return consumermanifest.Write(rc.ProjectRoot, buildWizardManifest(harnessName, refs))
+}
+
+// finalizeWizardInstall writes .fdh/lock.yaml + the .gitignore managed block +
+// the ~/.fdh/state.json project entry after components have been materialized.
+// Mirrors the manifest-flow resolution so `fdh install` / `fdh update` /
+// `fdh switch` see a coherent declarative state. Assumes the manifest was
+// already written by writeWizardManifest.
+//
+// The harness name is recorded so `fdh switch <other>` (and the downstream
+// manifest-flow `fdh install`) sees a coherent declarative state to diff against.
+func finalizeWizardInstall(
+	rc *runContext,
+	reg *hubregistry.Registry,
+	harnessName string,
+	refs []componentRef,
+) error {
+	m := buildWizardManifest(harnessName, refs)
+	// Harness lookup for Expand. Mirrors install_manifest.go's harnessLookup
+	// wiring so the manifest round-trips cleanly through the resolver.
 	harnessLookup := func(name string) ([]consumermanifest.HarnessMember, error) {
 		doc, herr := reg.LoadHarnesses()
 		if herr != nil {

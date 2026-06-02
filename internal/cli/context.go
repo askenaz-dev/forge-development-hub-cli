@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/forge/fdh/pkg/adapters"
@@ -18,7 +19,8 @@ import (
 type runContext struct {
 	Ctx          context.Context
 	HomeDir      string
-	ProjectRoot  string // empty if not inside a project
+	ProjectRoot  string         // empty if not inside a project
+	Scope        adapters.Scope // resolved install scope ("" = project default)
 	Adapters     *adapters.Manifest
 	Registry     registry.Registry
 	BuildVersion string
@@ -201,20 +203,6 @@ func isHTTPURL(u string) bool {
 	return strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://")
 }
 
-// applyLocalScope forces the project root to the current working directory,
-// regardless of whether it is a git repo. It backs the `--local` flag:
-// devs starting a project in a plain directory want components materialized
-// *here* (./.claude/…, ./.agents/…) — and, for init, a ./.fdh/manifest.yaml
-// created — rather than installed globally at user scope in their home.
-func applyLocalScope(rc *runContext) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return Errorf(ExitGenericFailure, "cannot determine current directory: %v", err)
-	}
-	rc.ProjectRoot = cwd
-	return nil
-}
-
 // detectProjectRoot walks up from CWD looking for the closest directory that
 // is a project anchor: a .git/ folder, or a .fdh/manifest.yaml that a prior
 // `fdh init`/`fdh install` materialized. Returns "" if none found.
@@ -260,28 +248,69 @@ func sanitizePathSegment(s string) string {
 
 // resolveScope maps the user's --scope choice into a concrete Scope.
 //
-//   - "user" or "project" → that scope literally
-//   - "auto" or "" → project if a project root was detected, else user
+// Local-by-default: with no explicit user scope, fdh installs into the current
+// project. The project root is the closest .git/ or .fdh/manifest.yaml anchor
+// walking up from the CWD; when there is no anchor, the CWD itself is the root
+// (git is optional). The ONLY way to install at user/home scope is "user"
+// (exposed as --global). As a side effect, resolveScope pins rc.ProjectRoot to
+// the CWD when project scope is chosen and no anchor was detected.
 //
-// On user scope a ProjectRoot is not required; on project scope a missing
-// project root is a fatal usage error.
+//   - "user" → user/home scope
+//   - "project", "auto", or "" → project scope rooted at the anchor or the CWD
 func resolveScope(scope string, rc *runContext) (adapters.Scope, error) {
 	switch strings.ToLower(scope) {
 	case "user":
 		return adapters.ScopeUser, nil
-	case "project":
+	case "", "auto", "project":
 		if rc.ProjectRoot == "" {
-			return "", Errorf(ExitInvalidUsage, "--scope project requires a detectable project root (.git/) at or above %s", currentDir())
+			cwd, err := os.Getwd()
+			if err != nil {
+				return "", Errorf(ExitGenericFailure, "cannot determine current directory: %v", err)
+			}
+			rc.ProjectRoot = cwd
 		}
 		return adapters.ScopeProject, nil
-	case "", "auto":
-		if rc.ProjectRoot != "" {
-			return adapters.ScopeProject, nil
-		}
-		return adapters.ScopeUser, nil
 	default:
 		return "", Errorf(ExitInvalidUsage, "unknown --scope %q (expected user|project|auto)", scope)
 	}
+}
+
+// projectRootIsGitRepo reports whether the resolved project root contains a
+// .git entry (file or directory). Used to decide the non-blocking "not a git
+// repo" warning.
+func projectRootIsGitRepo(root string) bool {
+	if root == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(root, ".git"))
+	return err == nil
+}
+
+// notAGitRepoWarning returns the non-blocking warning shown when fdh resolves
+// project scope into a directory that is not a git repo, or "" when no warning
+// is warranted (user scope, or a real git repo).
+func notAGitRepoWarning(scope adapters.Scope, root string) string {
+	if scope == adapters.ScopeProject && !projectRootIsGitRepo(root) {
+		return fmt.Sprintf("⚠ this is not a git repo — installing locally at %s", root)
+	}
+	return ""
+}
+
+// scopeFromFlags computes the effective scope string from the --global and
+// --scope flags, enforcing their mutual exclusion. --global (install at
+// user/home scope) wins; it conflicts only with an explicit --scope project.
+// Returns the scope string to pass to resolveScope ("user" for --global,
+// otherwise the --scope value, which may be "" / "auto" / "project").
+func scopeFromFlags(cmd *cobra.Command) (string, error) {
+	global, _ := cmd.Flags().GetBool("global")
+	scopeStr, _ := cmd.Flags().GetString("scope")
+	if global {
+		if scopeStr != "" && !strings.EqualFold(scopeStr, "auto") && !strings.EqualFold(scopeStr, "user") {
+			return "", Errorf(ExitInvalidUsage, "--global conflicts with --scope %s (use one or the other)", scopeStr)
+		}
+		return "user", nil
+	}
+	return scopeStr, nil
 }
 
 func currentDir() string {

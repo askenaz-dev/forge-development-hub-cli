@@ -108,7 +108,8 @@ The plural form (%q) is accepted as an alias.`, kind, kind, kind, kind, kind, ki
 		RunE:  func(cmd *cobra.Command, args []string) error { return runInstall(cmd, args, info) },
 	}
 	addCmd.Flags().StringSlice("agent", nil, "agent id to target (may be repeated)")
-	addCmd.Flags().String("scope", "auto", "install scope: user|project|auto")
+	addCmd.Flags().String("scope", "auto", "install scope: user|project|auto (default: project, rooted at the current directory)")
+	addCmd.Flags().Bool("global", false, "install at user/home scope (~/.claude, …) instead of into the current project")
 	parent.AddCommand(addCmd)
 
 	// --- list — reuses the list path ---
