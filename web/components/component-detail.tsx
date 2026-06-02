@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
+import { ScanStatusBadge } from "@/components/scan-status-badge";
 import {
   getComponent,
   getComponentDocument,
@@ -91,7 +92,7 @@ export async function ComponentDetail({
           {latest && (
             <div>
               <dt className="inline font-semibold">{t("scanStatus")}: </dt>
-              <dd className="inline">{latest.scan_status}</dd>
+              <dd className="inline"><ScanStatusBadge status={latest.scan_status} /></dd>
             </div>
           )}
           {manifest.tags && manifest.tags.length > 0 && (
