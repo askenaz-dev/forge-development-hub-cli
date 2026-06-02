@@ -11,6 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/forge/fdh/pkg/adapters"
 )
 
 // defaultPilotRegistry is the registry source the `init` command suggests
@@ -44,6 +46,12 @@ type InitResult struct {
 	// InstalledSkills records one entry per (skill, agent) pair the
 	// install loop attempted. Empty when the wizard was skipped.
 	InstalledSkills []InstalledSkillResult `json:"installed_skills,omitempty"`
+
+	// InstallScope is the scope the wizard installed into ("user" or
+	// "project"). Empty when the wizard was skipped. Surfaced so users
+	// understand *where* components landed (a non-git directory installs
+	// at user scope, e.g. ~/.claude/skills, not the current folder).
+	InstallScope string `json:"install_scope,omitempty"`
 
 	// WizardSkipped explains why the wizard did not run, when that
 	// condition is informational (e.g. non-TTY + non-interactive).
@@ -205,6 +213,14 @@ func runInit(cmd *cobra.Command, info BuildInfo) error {
 		result.SelectedAgents = selAgents
 		result.SelectedSkills = selSkills
 		result.InstalledSkills = installed
+		// The wizard installs with scope "auto": project when a project
+		// root was detected, otherwise user. Record which so the summary
+		// can tell the user where components landed.
+		if rc != nil && rc.ProjectRoot != "" {
+			result.InstallScope = string(adapters.ScopeProject)
+		} else {
+			result.InstallScope = string(adapters.ScopeUser)
+		}
 	}
 
 	// Optionally run doctor so the user gets immediate validation.
@@ -302,12 +318,82 @@ func printInitSummary(w io.Writer, r InitResult, skipDoctor bool) {
 		fmt.Fprintf(w, "  doctor:  PROBLEM (%s)\n", r.DoctorSummary)
 	}
 
+	printInitInstalls(w, r)
+
 	if r.DoctorOK && !skipDoctor {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "Next steps:")
-		fmt.Fprintln(w, "  fdh search <query>          # browse available skills")
+		fmt.Fprintln(w, "  fdh search <query>          # browse available components")
 		fmt.Fprintln(w, "  fdh install <ns>/<name>     # install one to all detected agents")
 	}
+}
+
+// printInitInstalls reports what the wizard installed and where, so the
+// user is never left guessing. A non-git directory installs at user scope
+// (e.g. ~/.claude/skills), NOT the current folder — that surprise was the
+// single most confusing part of init, so we spell out the scope and the
+// concrete target paths.
+func printInitInstalls(w io.Writer, r InitResult) {
+	if len(r.SelectedAgents) > 0 {
+		fmt.Fprintf(w, "  agents:  %s\n", strings.Join(r.SelectedAgents, ", "))
+	}
+	if len(r.InstalledSkills) == 0 {
+		return
+	}
+
+	// Group target paths by component so a component installed for several
+	// agents prints once. Preserve first-seen order.
+	type agg struct {
+		paths      []string
+		allSkipped bool
+	}
+	order := []string{}
+	byComp := map[string]*agg{}
+	for _, it := range r.InstalledSkills {
+		a, ok := byComp[it.Skill]
+		if !ok {
+			a = &agg{allSkipped: true}
+			byComp[it.Skill] = a
+			order = append(order, it.Skill)
+		}
+		if it.TargetPath != "" && !containsStr(a.paths, it.TargetPath) {
+			a.paths = append(a.paths, it.TargetPath)
+		}
+		if !it.Skipped {
+			a.allSkipped = false
+		}
+	}
+
+	scope := r.InstallScope
+	if scope == "" {
+		scope = "user"
+	}
+	fmt.Fprintf(w, "\nInstalled %d component(s) at %s scope:\n", len(order), scope)
+	for _, name := range order {
+		a := byComp[name]
+		note := ""
+		if a.allSkipped {
+			note = "  (already up to date)"
+		}
+		fmt.Fprintf(w, "  %s%s\n", name, note)
+		for _, p := range a.paths {
+			fmt.Fprintf(w, "    %s\n", p)
+		}
+	}
+	if scope == "user" {
+		fmt.Fprintln(w, "\nThese were installed at user scope (your home), because no project")
+		fmt.Fprintln(w, "was detected here. To install into a project instead, run init from a")
+		fmt.Fprintln(w, "directory with a .git/ folder (or run `git init` first).")
+	}
+}
+
+func containsStr(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 func displayValue(v string) string {

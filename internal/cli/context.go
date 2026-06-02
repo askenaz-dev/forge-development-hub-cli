@@ -202,8 +202,13 @@ func isHTTPURL(u string) bool {
 }
 
 // detectProjectRoot walks up from CWD looking for the closest directory that
-// contains either a .git/ folder or one of the well-known project anchors.
-// Returns "" if none found.
+// is a project anchor: a .git/ folder, or a .fdh/manifest.yaml that a prior
+// `fdh init`/`fdh install` materialized. Returns "" if none found.
+//
+// The .fdh/manifest.yaml anchor (not the bare .fdh/ directory) is deliberate:
+// the standalone installer drops a binary at ~/.fdh/bin, so anchoring on the
+// directory would make $HOME look like a project for anything run beneath it.
+// The manifest file only exists inside an actual fdh-managed project.
 func detectProjectRoot() string {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -212,6 +217,9 @@ func detectProjectRoot() string {
 	cur := cwd
 	for {
 		if _, err := os.Stat(filepath.Join(cur, ".git")); err == nil {
+			return cur
+		}
+		if _, err := os.Stat(filepath.Join(cur, ".fdh", "manifest.yaml")); err == nil {
 			return cur
 		}
 		parent := filepath.Dir(cur)
