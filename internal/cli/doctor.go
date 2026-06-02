@@ -82,7 +82,7 @@ type DoctorIssue struct {
 func newDoctorCmd(info BuildInfo) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Detect installed agents, verify writable paths, ping the registry",
+		Short: "Detect installed agents, verify writable paths, ping the hub",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor(cmd, args, info)
 		},

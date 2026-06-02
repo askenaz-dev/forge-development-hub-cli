@@ -27,7 +27,7 @@ type SearchHit struct {
 func newSearchCmd(info BuildInfo) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search <query>",
-		Short: "Search the registry catalog",
+		Short: "Search the hub catalog",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSearch(cmd, args, info)

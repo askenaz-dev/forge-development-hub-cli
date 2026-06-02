@@ -14,7 +14,7 @@ import (
 func newUpdateCmd(info BuildInfo) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",
-		Short: "Refresh installed skills from the hub",
+		Short: "Refresh installed components from the hub",
 		Long: `Walk every directory a known agent reads from, find .skill-version markers,
 compare the recorded hub commit + content hash against the hub's current HEAD,
 and propose an update plan. Confirm interactively (or pass --yes), then apply.
