@@ -3,7 +3,7 @@
 //
 // Shipped to consumers as dist/cli.js with a shebang added by scripts/post-build-fixup.mjs.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import * as path from "node:path";
 
@@ -32,13 +32,32 @@ function main(): never {
   const binPath = path.join(binDir, binaryFilename(target));
 
   if (!existsSync(binPath)) {
+    // Self-heal: the binary isn't here, which means postinstall never ran —
+    // typically because lifecycle scripts were blocked (`npm install
+    // --ignore-scripts`, or pnpm/yarn declining build scripts by default).
+    // Rather than send the user off to run more commands, fetch the binary
+    // now by invoking the bundled postinstall. This makes `npm install` a
+    // complete installation method: a wrapper that always ends up with a
+    // working binary, not a shortcut that needs a manual repair step.
+    const postinstallJs = path.join(packageRoot, "dist", "postinstall.js");
+    if (existsSync(postinstallJs)) {
+      console.error("fdh: fetching the platform binary (one-time; postinstall was skipped)…");
+      spawnSync(process.execPath, [postinstallJs], {
+        stdio: "inherit",
+        windowsHide: true,
+      });
+    }
+  }
+
+  if (!existsSync(binPath)) {
     console.error(
       `fdh: binary not found at ${binPath}\n` +
         `\n` +
-        `The postinstall script may have failed or been skipped.\n` +
+        `Automatic fetch failed (offline, blocked egress, or a proxy/cert issue).\n` +
         `Repair by running:\n` +
         `  npm rebuild @askenaz-dev/fdh\n` +
-        `(replace 'npm' with pnpm/yarn/bun if you installed with those).`,
+        `(replace 'npm' with pnpm/yarn/bun if you installed with those),\n` +
+        `or set FDH_RELEASES_BASE to a reachable mirror and retry.`,
     );
     process.exit(127); // command not found
   }
