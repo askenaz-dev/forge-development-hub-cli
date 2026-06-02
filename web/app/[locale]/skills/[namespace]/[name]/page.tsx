@@ -6,6 +6,7 @@ import { CopyCommand } from "@/components/copy-command";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarkdownView } from "@/components/markdown-view";
+import { ScanStatusBadge } from "@/components/scan-status-badge";
 
 /**
  * /skills/[namespace]/[name] — skill detail.
@@ -82,7 +83,7 @@ export default async function SkillDetailPage({
           {latest && (
             <div>
               <dt className="inline font-semibold">{t("scanStatus")}: </dt>
-              <dd className="inline">{latest.scan_status}</dd>
+              <dd className="inline"><ScanStatusBadge status={latest.scan_status} /></dd>
             </div>
           )}
           {manifest.tags && manifest.tags.length > 0 && (

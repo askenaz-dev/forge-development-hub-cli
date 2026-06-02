@@ -4,6 +4,7 @@ import { listComponents, type Kind } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CatalogSearch } from "@/components/catalog-search";
 import { Reveal } from "@/components/motion/reveal";
+import { ScanStatusBadge } from "@/components/scan-status-badge";
 
 /**
  * ComponentCatalog is the shared, server-rendered browse grid for one kind
@@ -61,7 +62,7 @@ export async function ComponentCatalog({
                       <CardDescription className="line-clamp-3">{c.description}</CardDescription>
                       <div className="mt-3 flex items-center justify-between text-xs">
                         <span className="font-mono text-muted-foreground">v{c.latest_version}</span>
-                        <span className="font-mono text-muted-foreground">{c.scan_status}</span>
+                        <ScanStatusBadge status={c.scan_status} />
                       </div>
                     </CardContent>
                   </Card>

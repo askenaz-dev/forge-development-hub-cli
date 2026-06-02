@@ -4,6 +4,7 @@ import { listSkills } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SkillsSearch } from "@/components/skills-search";
 import { Reveal } from "@/components/motion/reveal";
+import { ScanStatusBadge } from "@/components/scan-status-badge";
 
 /**
  * /skills — server-rendered, SEO-friendly catalog.
@@ -53,7 +54,7 @@ export default async function SkillsPage({
                       <CardDescription className="line-clamp-3">{s.description}</CardDescription>
                       <div className="mt-3 flex items-center justify-between text-xs">
                         <span className="font-mono text-muted-foreground">v{s.latest_version}</span>
-                        <ScanBadge status={s.scan_status} />
+                        <ScanStatusBadge status={s.scan_status} />
                       </div>
                     </CardContent>
                   </Card>
@@ -64,21 +65,5 @@ export default async function SkillsPage({
         )}
       </div>
     </div>
-  );
-}
-
-function ScanBadge({ status }: { status: string }) {
-  const color =
-    status === "pass"
-      ? "bg-green-500/10 text-green-700 dark:text-green-300"
-      : status === "warn"
-      ? "bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"
-      : status === "fail"
-      ? "bg-destructive/10 text-destructive"
-      : "bg-muted text-muted-foreground";
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
-      {status}
-    </span>
   );
 }
