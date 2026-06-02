@@ -82,8 +82,8 @@ asked to via --force.`,
 	}
 	cmd.Flags().String("registry-url", "", "remote URL of the skill registry (Git)")
 	cmd.Flags().String("registry-local", "", "absolute path to a local clone of the skill registry")
-	cmd.Flags().String("scope", "", "default install scope: user | project | auto")
-	cmd.Flags().Bool("local", false, "install into the current directory (creates ./.fdh/ here), even if it is not a git repo. Opposite of the global/home install used by default outside a project.")
+	cmd.Flags().String("scope", "", "default install scope: user | project | auto (default: project, rooted at the current directory)")
+	cmd.Flags().Bool("global", false, "install at user/home scope (~/.claude, …) instead of into the current project")
 	cmd.Flags().Bool("skip-doctor", false, "do not run doctor after configuring")
 	cmd.Flags().Bool("force", false, "overwrite existing values (default: keep existing, only fill missing)")
 
@@ -100,7 +100,6 @@ func runInit(cmd *cobra.Command, info BuildInfo) error {
 	registryURL, _ := cmd.Flags().GetString("registry-url")
 	registryLocal, _ := cmd.Flags().GetString("registry-local")
 	scope, _ := cmd.Flags().GetString("scope")
-	local, _ := cmd.Flags().GetBool("local")
 	skipDoctor, _ := cmd.Flags().GetBool("skip-doctor")
 	force, _ := cmd.Flags().GetBool("force")
 	agentsFlag, _ := cmd.Flags().GetStringSlice("agents")
@@ -113,9 +112,11 @@ func runInit(cmd *cobra.Command, info BuildInfo) error {
 		return Errorf(ExitInvalidUsage,
 			"--registry-url and --registry-local are mutually exclusive")
 	}
-	if local && strings.EqualFold(scope, "user") {
-		return Errorf(ExitInvalidUsage,
-			"--local conflicts with --scope user (--local installs into the current directory)")
+	// Local-by-default scope; --global selects user/home. Enforces the
+	// --global/--scope mutual exclusion.
+	scopeStr, err := scopeFromFlags(cmd)
+	if err != nil {
+		return err
 	}
 
 	// Decide what to apply. Existing values are kept unless --force is set.
@@ -183,13 +184,17 @@ func runInit(cmd *cobra.Command, info BuildInfo) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	rc, rcErr := buildRunContext(ctx, info, false)
-	if rcErr == nil && local {
-		// --local: pin the project root to the current directory so the
-		// wizard installs here (project scope) and writes ./.fdh/manifest.yaml,
-		// regardless of whether this is a git repo.
-		if lerr := applyLocalScope(rc); lerr != nil {
-			return lerr
+	// Resolve the install scope (local-by-default; --global → user). For
+	// project scope this also pins rc.ProjectRoot to the CWD when there is no
+	// git/.fdh anchor, so the wizard materializes here and writes ./.fdh/.
+	wizardScope := adapters.ScopeProject
+	if rcErr == nil {
+		s, serr := resolveScope(scopeStr, rc)
+		if serr != nil {
+			return serr
 		}
+		wizardScope = s
+		rc.Scope = s // consumed by runInitWizard
 	}
 	hubURL := ""
 	if rcErr == nil {
@@ -227,14 +232,9 @@ func runInit(cmd *cobra.Command, info BuildInfo) error {
 		result.SelectedAgents = selAgents
 		result.SelectedSkills = selSkills
 		result.InstalledSkills = installed
-		// The wizard installs with scope "auto": project when a project
-		// root was detected, otherwise user. Record which so the summary
-		// can tell the user where components landed.
-		if rc != nil && rc.ProjectRoot != "" {
-			result.InstallScope = string(adapters.ScopeProject)
-		} else {
-			result.InstallScope = string(adapters.ScopeUser)
-		}
+		// Record the resolved scope so the summary can tell the user where
+		// components landed (local project vs user/home with --global).
+		result.InstallScope = string(wizardScope)
 	}
 
 	// Optionally run doctor so the user gets immediate validation.
@@ -380,7 +380,7 @@ func printInitInstalls(w io.Writer, r InitResult) {
 
 	scope := r.InstallScope
 	if scope == "" {
-		scope = "user"
+		scope = string(adapters.ScopeProject)
 	}
 	fmt.Fprintf(w, "\nInstalled %d component(s) at %s scope:\n", len(order), scope)
 	for _, name := range order {
@@ -394,10 +394,10 @@ func printInitInstalls(w io.Writer, r InitResult) {
 			fmt.Fprintf(w, "    %s\n", p)
 		}
 	}
-	if scope == "user" {
-		fmt.Fprintln(w, "\nThese were installed at user scope (your home), so every project on this")
-		fmt.Fprintln(w, "machine can read them. To install into the current directory instead,")
-		fmt.Fprintln(w, "re-run with --local (works even without git):  fdh init --local")
+	if scope == string(adapters.ScopeUser) {
+		fmt.Fprintln(w, "\nThese were installed at user/home scope (--global), so every project on")
+		fmt.Fprintln(w, "this machine can read them. Omit --global to install into the current")
+		fmt.Fprintln(w, "directory instead.")
 	}
 }
 

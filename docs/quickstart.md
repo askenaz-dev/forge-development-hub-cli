@@ -78,9 +78,9 @@ fdh init
 2. Opens a wizard:
    - Step 1: pick which agents to target (Claude Code, Codex, …).
    - Step 2: pick which skills/rules/agents/hooks to install (profile defaults pre-selected).
-   - Step 3: confirm.
-3. Installs the selected components to the per-agent conventional paths
-   (`.claude/skills/<name>/`, `.github/prompts/<name>.prompt.md`, …) and writes `.fdh/manifest.yaml` + `.fdh/lock.yaml` for reproducibility.
+   - Step 3: confirm the selection (writes `.fdh/manifest.yaml`), then answer `Install now?`.
+3. Installs (if you said yes) the selected components to the per-agent conventional paths
+   (`.claude/skills/<name>/`, `.github/prompts/<name>.prompt.md`, …) and writes `.fdh/lock.yaml` for reproducibility. See [2d](#2d-where-things-install-local-by-default) / [2e](#2e-configure-once-apply-many-times-fdh-install-with-no-args) for scope and the manifest flow.
 4. Runs `fdh doctor` to verify reachability.
 
 For CI (or any non-TTY context):
@@ -141,6 +141,45 @@ Registry:
   source: http:https://fdh.askenaz.dev/v1/?api=v1  [reachable]
 ```
 
+## 2d. Where things install: local by default
+
+`fdh` installs into the **current project by default** — `init` and `install`
+materialize under the directory you run them in (`./.claude/…`, `./.fdh/…`).
+A git repo is **not** required: when there's no `.git/` or `.fdh/manifest.yaml`
+anchor, the current directory itself is the project root, and `fdh` prints a
+non-blocking notice (`⚠ this is not a git repo — installing locally at <cwd>`)
+and proceeds.
+
+To install at user/home scope instead (shared across every project on the
+machine, under `~/.claude/…`), pass `--global`:
+
+```sh
+fdh install code-review/standard --global   # → ~/.claude/… instead of ./.claude/…
+fdh init --global                            # configure + install globally
+```
+
+`--global` is the only switch that leaves the current project; it is mutually
+exclusive with `--scope project`.
+
+## 2e. Configure once, apply many times (`fdh install` with no args)
+
+`fdh init` writes a `.fdh/manifest.yaml` — your declarative intent (which
+harness, which extra components). At the end of the wizard it asks
+`Install now?`:
+
+- **Yes** → resolves, writes `.fdh/lock.yaml`, and materializes components now.
+- **No** → leaves just the manifest; nothing is materialized yet.
+
+Either way, `.fdh/manifest.yaml` is committable. Anyone on the team (or you, on
+another machine) then runs:
+
+```sh
+fdh install          # no args: reads .fdh/manifest.yaml, resolves, materializes
+```
+
+This is idempotent and repeatable — the `package.json` + `npm install` model:
+the manifest is the source of truth, `fdh install` applies it locally.
+
 ## 3. Run `doctor`
 
 ```sh
@@ -185,8 +224,8 @@ fdh list-installed --all --json | jq .    # everything, machine-readable
 # Only install for Claude Code, ignoring other detected agents
 fdh install security/owasp-review --agent claude-code
 
-# Install at user scope explicitly, even if cwd is inside a git repo
-fdh install code-review/standard --scope user
+# Install at user/home scope instead of the current project
+fdh install code-review/standard --global
 
 # Install everything from the hub's `minimal` profile in one shot
 fdh init --profile minimal

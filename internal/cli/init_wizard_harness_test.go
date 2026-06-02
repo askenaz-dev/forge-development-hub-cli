@@ -155,6 +155,61 @@ func TestRunInitWizard_HarnessDefaultInstallsAllKinds(t *testing.T) {
 	// Materialized: SKILL.md + 2 rule files on disk.
 	_, err = os.Stat(filepath.Join(rc.ProjectRoot, ".claude", "skills", "design-system", "SKILL.md"))
 	assert.NoError(t, err, "skill materialized")
+	// confirm:true accepted both prompts (selection + "Install now?"), so the
+	// lock was written too.
+	_, err = os.Stat(filepath.Join(rc.ProjectRoot, ".fdh", "lock.yaml"))
+	assert.NoError(t, err, "lock written when install confirmed")
+}
+
+// installNowDeclinedPrompter accepts the Step-3 selection (first Confirm) but
+// declines the "Install now?" prompt (second Confirm), exercising the
+// configure-without-materializing path.
+type installNowDeclinedPrompter struct {
+	fakePrompter
+	calls *int
+}
+
+func (p installNowDeclinedPrompter) Confirm(_ string) (bool, error) {
+	*p.calls++
+	return *p.calls == 1, nil // 1st (selection) = yes, 2nd (install now) = no
+}
+
+// Declining "Install now?" writes the manifest (intent) but leaves nothing
+// materialized and no lock — the "configure once, apply later" path.
+func TestRunInitWizard_DeclineInstallNowWritesManifestOnly(t *testing.T) {
+	hub := buildWizardV2Hub(t)
+	rc := buildWizardRC(t)
+
+	calls := 0
+	prompter := installNowDeclinedPrompter{
+		fakePrompter: fakePrompter{
+			pickedHarness: "default",
+			pickedAgents:  []string{"claude-code"},
+			pickedComponents: []componentRef{
+				{Name: "design-system", Kind: "skill"},
+				{Name: "no-console-log", Kind: "rule"},
+				{Name: "no-hardcoded-secrets", Kind: "rule"},
+			},
+		},
+		calls: &calls,
+	}
+	_, _, installed, err := runInitWizard(
+		context.Background(),
+		io.Discard, io.Discard,
+		rc, hub, prompter,
+		wizardInput{},
+		false, false, "0.0.0-test",
+	)
+	require.NoError(t, err)
+	assert.Empty(t, installed, "declining install materializes nothing")
+
+	// Manifest written (the intent), but no lock and no materialized files.
+	_, e1 := os.Stat(filepath.Join(rc.ProjectRoot, ".fdh", "manifest.yaml"))
+	assert.NoError(t, e1, "manifest written even when install declined")
+	_, e2 := os.Stat(filepath.Join(rc.ProjectRoot, ".fdh", "lock.yaml"))
+	assert.True(t, os.IsNotExist(e2), "lock NOT written when install declined")
+	_, e3 := os.Stat(filepath.Join(rc.ProjectRoot, ".claude", "skills", "design-system", "SKILL.md"))
+	assert.True(t, os.IsNotExist(e3), "components NOT materialized when install declined")
 }
 
 // Non-interactive path: pass --harness backend-team via wizardInput,

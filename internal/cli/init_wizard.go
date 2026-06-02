@@ -402,9 +402,17 @@ func runInitWizard(
 	// `selected_skills` keep matching.
 	skills := skillNamesFromRefs(resolved)
 
-	// Step 3: confirmation.
+	// Resolved install scope (set by the caller via rc.Scope; default project).
+	scope := rc.Scope
+	if scope == "" {
+		scope = adapters.ScopeProject
+	}
+
+	// Step 3: confirm the selection. The summary names the resolved scope,
+	// the destination paths, and the non-blocking "not a git repo" warning.
+	gitWarn := notAGitRepoWarning(scope, rc.ProjectRoot)
 	if prompter != nil {
-		summary := summariseComponentSelection(harnessName, agents, resolved, dryRun)
+		summary := summariseComponentSelection(harnessName, agents, resolved, scope, rc.ProjectRoot, gitWarn, dryRun)
 		ok, err := prompter.Confirm(summary)
 		if err != nil {
 			return nil, nil, nil, Wrap(ExitGenericFailure, err)
@@ -414,15 +422,46 @@ func runInitWizard(
 			return agents, skills, nil, nil
 		}
 	}
+	if gitWarn != "" {
+		fmt.Fprintln(stderr, gitWarn)
+	}
+
+	// Dry-run never touches the filesystem: report the plan and stop.
+	if dryRun {
+		installed, installErr := installResolvedRefs(ctx, reg, rc, scope, resolved, agents, installedByFDH, true)
+		return agents, skills, installed, installErr
+	}
+
+	// Write the manifest (declarative intent) — always, at project scope.
+	// This is the "configure once" half: it happens whether or not the
+	// developer materializes now. --global (user scope) leaves no manifest.
+	manifestWritten := false
+	if scope == adapters.ScopeProject && len(resolved) > 0 {
+		if werr := writeWizardManifest(rc, harnessName, resolved); werr != nil {
+			return agents, skills, nil, Wrap(ExitGenericFailure, werr)
+		}
+		manifestWritten = true
+	}
+
+	// Decide whether to materialize now. Interactive: ask "Install now?".
+	// Non-interactive (prompter == nil): default to materializing (CI-friendly).
+	materialize := true
+	if prompter != nil && manifestWritten {
+		ans, err := prompter.Confirm("Install now? (writes the lock and materializes components — you can also run `fdh install` later)")
+		if err != nil {
+			return agents, skills, nil, Wrap(ExitGenericFailure, err)
+		}
+		materialize = ans
+	}
+	if !materialize {
+		printWizardNextSteps(stdout, scope, rc.ProjectRoot, false)
+		return agents, skills, nil, nil
+	}
 
 	// Install loop — kind-aware, routes each component to the right
 	// adapter family. Mirrors the routing in install_manifest.go's
 	// installResolvedComponent (kept here rather than imported because
 	// the wizard owns its own InstallOpts/dryRun semantics).
-	scope, err := resolveScope("auto", rc)
-	if err != nil {
-		return agents, skills, nil, err
-	}
 	installed, installErr := installResolvedRefs(
 		ctx, reg, rc, scope, resolved, agents,
 		installedByFDH, dryRun,
@@ -431,13 +470,34 @@ func runInitWizard(
 		return agents, skills, installed, installErr
 	}
 
-	// Persist manifest + lock + state for the chosen selection so
-	// `fdh install` / `fdh update` / `fdh switch` see a coherent
-	// declarative state across all four kinds.
-	if rc.ProjectRoot != "" && len(resolved) > 0 {
-		_ = persistWizardSelectionV2(rc, reg, harnessName, resolved, installedByFDH)
+	// Finalize: lock + gitignore + state so `fdh install` / `fdh update` /
+	// `fdh switch` see a coherent declarative state. Project scope only.
+	if scope == adapters.ScopeProject && len(resolved) > 0 {
+		_ = finalizeWizardInstall(rc, reg, harnessName, resolved)
 	}
+	printWizardNextSteps(stdout, scope, rc.ProjectRoot, true)
 	return agents, skills, installed, nil
+}
+
+// printWizardNextSteps prints the closing "Next steps" guidance, naming
+// `fdh install` and the scope/destination. The message differs based on
+// whether components were materialized in this run.
+func printWizardNextSteps(w io.Writer, scope adapters.Scope, root string, materialized bool) {
+	fmt.Fprintln(w, "\nNext steps:")
+	if scope == adapters.ScopeUser {
+		if materialized {
+			fmt.Fprintln(w, "  Installed at user/home scope (--global).")
+			fmt.Fprintln(w, "  Re-run `fdh install --global <ns>/<name>` to add more.")
+		}
+		return
+	}
+	if materialized {
+		fmt.Fprintf(w, "  Components materialized under %s\n", root)
+		fmt.Fprintln(w, "  Re-run `fdh install` to re-sync after editing .fdh/manifest.yaml.")
+	} else {
+		fmt.Fprintf(w, "  Wrote .fdh/manifest.yaml under %s (nothing materialized yet).\n", root)
+		fmt.Fprintln(w, "  Run `fdh install` to materialize it (idempotent, repeatable on any machine).")
+	}
 }
 
 // timeNow is a small indirection so tests can stub if needed (none do yet).

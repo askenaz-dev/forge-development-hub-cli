@@ -63,13 +63,15 @@ func TestRunInstallManifest_HappyPath(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestRunInstallManifest_NoManifestNoLegacyFails(t *testing.T) {
+func TestRunInstallManifest_NoManifestNoLegacyIsNotFatal(t *testing.T) {
+	// Local-by-default: in a clean directory the mere absence of a manifest
+	// is NOT a fatal error — fdh guides the user and exits 0 without writing.
 	rc := buildWizardRC(t)
 	cmd, info := freshInstallCmd(t)
 	err := runInstallManifest(cmd, rc, info)
-	require.Error(t, err)
-	assert.Equal(t, ExitInvalidUsage, ExitCode(err))
-	assert.Contains(t, err.Error(), "fdh init")
+	require.NoError(t, err)
+	_, statErr := os.Stat(filepath.Join(rc.ProjectRoot, ".fdh", "lock.yaml"))
+	assert.True(t, os.IsNotExist(statErr), "nothing should be materialized in a clean dir")
 }
 
 func TestRunInstallManifest_AutoGenFromLegacy(t *testing.T) {

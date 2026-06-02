@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/forge/fdh/pkg/adapters"
 )
 
 func TestPrintInitInstalls_UserScopeReportsPathAndExplains(t *testing.T) {
@@ -24,9 +26,9 @@ func TestPrintInitInstalls_UserScopeReportsPathAndExplains(t *testing.T) {
 	assert.Contains(t, out, "Installed 1 component(s) at user scope")
 	assert.Contains(t, out, "devsecops")
 	assert.Contains(t, out, "/home/me/.claude/skills/devsecops")
-	// The user-scope surprise must be spelled out, and point at --local.
-	assert.Contains(t, out, "user scope")
-	assert.Contains(t, out, "--local")
+	// The user-scope case must be spelled out, and point at --global.
+	assert.Contains(t, out, "user/home scope")
+	assert.Contains(t, out, "--global")
 }
 
 func TestPrintInitInstalls_GroupsAgentsAndFlagsSkipped(t *testing.T) {
@@ -54,28 +56,37 @@ func TestPrintInitInstalls_NothingInstalledIsQuiet(t *testing.T) {
 	assert.Empty(t, buf.String())
 }
 
-func TestApplyLocalScope_PinsProjectRootToCwd(t *testing.T) {
+func TestResolveScope_DefaultRootsAtCwdWhenNoAnchor(t *testing.T) {
 	dir := t.TempDir() // a plain dir, no .git, no .fdh
 	t.Chdir(dir)
 
 	rc := &runContext{ProjectRoot: ""} // as if no project was detected
-	require.NoError(t, applyLocalScope(rc))
+	got, err := resolveScope("", rc)   // local-by-default
+	require.NoError(t, err)
+	assert.Equal(t, adapters.ScopeProject, got)
 
 	gotResolved, _ := filepath.EvalSymlinks(rc.ProjectRoot)
 	dirResolved, _ := filepath.EvalSymlinks(dir)
-	assert.Equal(t, dirResolved, gotResolved, "--local must root the project at cwd")
+	assert.Equal(t, dirResolved, gotResolved, "default scope must root the project at cwd")
 }
 
-func TestApplyLocalScope_OverridesDetectedRoot(t *testing.T) {
-	// Even when a parent git root would be detected, --local pins to cwd:
-	// the flag means "install into THIS directory".
-	dir := t.TempDir()
-	t.Chdir(dir)
-	rc := &runContext{ProjectRoot: filepath.Join(dir, "..", "some-parent-repo")}
-	require.NoError(t, applyLocalScope(rc))
-	gotResolved, _ := filepath.EvalSymlinks(rc.ProjectRoot)
-	dirResolved, _ := filepath.EvalSymlinks(dir)
-	assert.Equal(t, dirResolved, gotResolved)
+func TestResolveScope_DefaultKeepsDetectedRoot(t *testing.T) {
+	// When an anchor was already detected, the default must NOT override it
+	// with the cwd — it installs at the detected project root.
+	detected := filepath.Join(t.TempDir(), "repo")
+	rc := &runContext{ProjectRoot: detected}
+	got, err := resolveScope("auto", rc)
+	require.NoError(t, err)
+	assert.Equal(t, adapters.ScopeProject, got)
+	assert.Equal(t, detected, rc.ProjectRoot)
+}
+
+func TestResolveScope_UserIsHomeScope(t *testing.T) {
+	rc := &runContext{ProjectRoot: ""}
+	got, err := resolveScope("user", rc)
+	require.NoError(t, err)
+	assert.Equal(t, adapters.ScopeUser, got)
+	assert.Empty(t, rc.ProjectRoot, "user scope must not pin a project root")
 }
 
 func TestDetectProjectRoot_FdhManifestAnchor(t *testing.T) {

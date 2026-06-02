@@ -1,8 +1,9 @@
 // Package main is the entrypoint for the fdh CLI.
 //
-// The CLI installs spec-compliant Agent Skills (https://agentskills.io)
-// to four AI coding agents — Claude Code, GitHub Copilot, OpenAI Codex,
-// OpenCode — from a shared Git-backed skill registry.
+// The CLI installs Forge harnesses — curated bundles of skills, rules,
+// agents, and hooks configured in the Forge platform — to four AI coding
+// agents (Claude Code, GitHub Copilot, OpenAI Codex, OpenCode) from a shared
+// Git-backed hub. Component bundles follow the open Agent Skills format.
 //
 // See the OpenSpec change `installer-core` in the forge-development-hub
 // repository for the requirements this CLI implements.

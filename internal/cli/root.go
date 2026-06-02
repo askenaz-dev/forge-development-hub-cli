@@ -29,7 +29,7 @@ func Execute(info BuildInfo) error {
 func newRootCmd(info BuildInfo) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "fdh",
-		Short: "Install Agent Skills across Claude Code, Copilot, Codex, and OpenCode",
+		Short: "Install Forge harnesses (skills, rules, agents, hooks) across Claude Code, Copilot, Codex, and OpenCode",
 		Long:  rootHelpLong,
 		Version: fmt.Sprintf("%s (commit %s, built %s)",
 			info.Version, info.Commit, info.BuildDate),
@@ -68,16 +68,20 @@ func newRootCmd(info BuildInfo) *cobra.Command {
 	return root
 }
 
-const rootHelpLong = `fdh installs Agent Skills (https://agentskills.io)
-to the AI coding agents detected on this machine.
+const rootHelpLong = `fdh installs Forge harnesses into the AI coding agents
+detected on this machine.
 
-Skills are stored in a shared Git-backed registry. The installer fans
-each install out to every documented path of the target agents, so a
-single command makes the skill available across Claude Code, GitHub
-Copilot, OpenAI Codex, and OpenCode at once.
+A harness is a curated bundle — skills, rules, agents, and hooks — configured
+in the Forge platform. You pick one in your project's .fdh/manifest.yaml and
+'fdh install' resolves it against the hub and materializes its components.
 
-Run 'fdh doctor' to see which agents the installer has
-detected and which directories it will write to.`
+The catalog lives in a shared Git-backed hub. The installer fans each
+component out to every documented path of the target agents, so a single
+command makes the harness available across Claude Code, GitHub Copilot,
+OpenAI Codex, and OpenCode at once.
+
+Run 'fdh doctor' to see which agents the installer has detected and which
+directories it will write to.`
 
 // initConfig wires viper to read configuration from an explicit --config
 // path, the per-user config directory, and environment variables prefixed

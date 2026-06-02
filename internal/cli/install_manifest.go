@@ -50,12 +50,17 @@ type ManifestComponent struct {
 // consumer's manifest against the hub and materializes the result,
 // then writes the lock and updates the gitignore section.
 func runInstallManifest(cmd *cobra.Command, rc *runContext, info BuildInfo) error {
+	// Local-by-default: with no .git/.fdh anchor, treat the CWD as the project
+	// root rather than refusing. Git is optional; warn but proceed.
 	if rc.ProjectRoot == "" {
-		return Errorf(ExitInvalidUsage,
-			"nothing to install: no component named and no project found here.\n"+
-				"  • install one component:  fdh install <namespace>/<name>   (e.g. fdh install dx-platform/spec-driven-development)\n"+
-				"  • browse what's available: fdh search <query>\n"+
-				"  • or run this from a project directory (one with a .git/ folder or a .fdh/manifest.yaml) to apply its manifest")
+		cwd, err := os.Getwd()
+		if err != nil {
+			return Errorf(ExitGenericFailure, "cannot determine current directory: %v", err)
+		}
+		rc.ProjectRoot = cwd
+	}
+	if w := notAGitRepoWarning(adapters.ScopeProject, rc.ProjectRoot); w != "" {
+		fmt.Fprintln(cmd.ErrOrStderr(), w)
 	}
 
 	manifest, generatedFromLegacy, err := loadOrGenerateManifest(cmd, rc)
@@ -247,8 +252,12 @@ func loadOrGenerateManifest(cmd *cobra.Command, rc *runContext) (*consumermanife
 		return nil, false, Wrap(ExitGenericFailure, err)
 	}
 	if !consumermanifest.HasAnyEntries(gen) {
-		return nil, false, Errorf(ExitInvalidUsage,
-			"no .fdh/manifest.yaml and no legacy markers detected; run `fdh init` to bootstrap")
+		// Clean directory: nothing to do, but the mere absence of a manifest
+		// is not a fatal error (local-by-default). Guide and exit 0.
+		fmt.Fprintln(cmd.ErrOrStderr(),
+			"No .fdh/manifest.yaml here yet. Run `fdh init` to pick a harness, or create\n"+
+				".fdh/manifest.yaml with a `harness:` / component list, then re-run `fdh install`.")
+		return nil, false, nil
 	}
 	if err := consumermanifest.Write(rc.ProjectRoot, gen); err != nil {
 		if errors.Is(err, os.ErrPermission) {

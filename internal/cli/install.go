@@ -56,8 +56,8 @@ func newInstallCmd(info BuildInfo) *cobra.Command {
 	}
 	cmd.Flags().StringSlice("agent", nil, "agent id to target (may be repeated). Default: every detected agent.")
 	cmd.Flags().String("kind", "", "component kind: skill|rule|agent|hook. Default: inferred from the registry index (required only when a name is ambiguous across kinds).")
-	cmd.Flags().String("scope", "auto", "install scope: user|project|auto")
-	cmd.Flags().Bool("local", false, "install into the current directory, even if it is not a git repo (shorthand for project scope rooted here)")
+	cmd.Flags().String("scope", "auto", "install scope: user|project|auto (default: project, rooted at the current directory)")
+	cmd.Flags().Bool("global", false, "install at user/home scope (~/.claude, …) instead of into the current project")
 	cmd.Flags().Bool("frozen", false, "manifest-flow only: fail if the lock does not satisfy the manifest")
 	cmd.Flags().Bool("no-frozen", false, "manifest-flow only: opt out of CI auto-frozen behavior")
 	cmd.Flags().String("allow-yanked", "", "explicit escape hatch: install the named yanked version despite lifecycle exclusion")
@@ -90,15 +90,12 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 		return err
 	}
 
-	// --local pins the project root to the current directory so install
-	// materializes here (project scope) even without a git repo.
-	if local, _ := cmd.Flags().GetBool("local"); local {
-		if scopeStr, _ := cmd.Flags().GetString("scope"); strings.EqualFold(scopeStr, "user") {
-			return Errorf(ExitInvalidUsage, "--local conflicts with --scope user")
-		}
-		if lerr := applyLocalScope(rc); lerr != nil {
-			return lerr
-		}
+	// Local-by-default scope; --global selects user/home. Resolved once here
+	// so the --global/--scope mutual-exclusion surfaces for both the
+	// manifest and single-component paths.
+	scopeStr, err := scopeFromFlags(cmd)
+	if err != nil {
+		return err
 	}
 
 	// No argument: manifest-flow path. Reads .fdh/manifest.yaml,
@@ -117,10 +114,12 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 		return Errorf(ExitInvalidUsage, "invalid skill reference: %v", err)
 	}
 
-	scopeStr, _ := cmd.Flags().GetString("scope")
 	scope, err := resolveScope(scopeStr, rc)
 	if err != nil {
 		return err
+	}
+	if w := notAGitRepoWarning(scope, rc.ProjectRoot); w != "" {
+		fmt.Fprintln(cmd.ErrOrStderr(), w)
 	}
 
 	// Resolve the component kind (skill|rule|agent|hook). An explicit
