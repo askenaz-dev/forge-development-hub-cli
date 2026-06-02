@@ -97,8 +97,15 @@ $Version = Resolve-Version -Requested $Version
 
 # --- artifact URL convention --------------------------------------------
 
+# Release tags are vX.Y.Z and the Releases download path uses the tag
+# verbatim; goreleaser strips the leading "v" from the artifact *filename*
+# ({{ .Version }} -> "0.2.6"). Normalise the tag to carry a leading "v"
+# (covers -Version 0.2.6) and derive the v-less form for the filename.
+if ($Version -notmatch '^v') { $Version = "v$Version" }
+$versionNoV  = $Version -replace '^v', ''
+
 # Matches the artifact names emitted by .goreleaser.yaml.
-$artifact    = "fdh_${Version}_windows_${arch}.zip"
+$artifact    = "fdh_${versionNoV}_windows_${arch}.zip"
 $urlBase     = "$ReleasesBase/download/$Version"
 $artifactUrl = "$urlBase/$artifact"
 $shaUrl      = "$artifactUrl.sha256"

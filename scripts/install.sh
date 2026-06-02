@@ -155,10 +155,21 @@ resolve_version
 
 # --- discover artifact URLs ---------------------------------------------
 
+# Release tags are vX.Y.Z and the Releases download path uses the tag
+# verbatim. goreleaser, however, strips the leading "v" from the artifact
+# *filename* ({{ .Version }} → "0.2.6"), so the path segment and the
+# filename differ by that "v". Normalise the tag to carry a leading "v"
+# (covers `--version 0.2.6`) and derive the v-less form for the filename.
+case "${VERSION}" in
+    v*) ;;
+    *) VERSION="v${VERSION}" ;;
+esac
+version_no_v="${VERSION#v}"
+
 # Convention emitted by .goreleaser.yaml:
-#   ${FDH_RELEASES_BASE}/download/<tag>/fdh_<tag>_<os>_<arch>.tar.gz
-#   ${FDH_RELEASES_BASE}/download/<tag>/fdh_<tag>_<os>_<arch>.tar.gz.sha256
-artifact="fdh_${VERSION}_${os}_${arch}.tar.gz"
+#   ${FDH_RELEASES_BASE}/download/<vTag>/fdh_<version-no-v>_<os>_<arch>.tar.gz
+#   ${FDH_RELEASES_BASE}/download/<vTag>/fdh_<version-no-v>_<os>_<arch>.tar.gz.sha256
+artifact="fdh_${version_no_v}_${os}_${arch}.tar.gz"
 artifact_url="${FDH_RELEASES_BASE}/download/${VERSION}/${artifact}"
 sha_url="${artifact_url}.sha256"
 
