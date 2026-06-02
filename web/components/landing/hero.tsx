@@ -59,40 +59,32 @@ export async function Hero({ data }: { data: LandingData }) {
             </Button>
           </div>
 
-          {/* Catalog composition — one chip per kind, with live counts.
-              When the API is down we still show the four kind labels (no
-              fabricated numbers), so the four-primitive story always reads. */}
-          <dl className="mx-auto mt-12 flex max-w-xl flex-wrap items-center justify-center gap-x-10 gap-y-4">
-            <Stat live={data.live} value={data.byKind.skill} label={t("statSkills")} />
-            <Stat live={data.live} value={data.byKind.rule} label={t("statRules")} />
-            <Stat live={data.live} value={data.byKind.agent} label={t("statAgents")} />
-            <Stat live={data.live} value={data.byKind.hook} label={t("statHooks")} />
-          </dl>
+          {/* Catalog composition — one chip per kind, with live counts. The
+              page renders dynamically (see page.tsx) so `data.live` is true in
+              normal operation and the counters always show. On a genuine API
+              outage we omit the whole block rather than render misleading
+              zeros or numberless labels. */}
+          {data.live && (
+            <dl className="mx-auto mt-12 flex max-w-xl flex-wrap items-center justify-center gap-x-10 gap-y-4">
+              <Stat value={data.byKind.skill} label={t("statSkills")} />
+              <Stat value={data.byKind.rule} label={t("statRules")} />
+              <Stat value={data.byKind.agent} label={t("statAgents")} />
+              <Stat value={data.byKind.hook} label={t("statHooks")} />
+            </dl>
+          )}
         </div>
       </div>
     </section>
   );
 }
 
-function Stat({
-  value,
-  label,
-  live,
-}: {
-  value: number;
-  label: string;
-  live: boolean;
-}) {
+function Stat({ value, label }: { value: number; label: string }) {
   return (
     <div className="flex flex-col items-center">
-      {live && (
-        <dd className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
-          <CountUp to={value} />
-        </dd>
-      )}
-      <dt className={live ? "mt-1 text-sm text-muted-foreground" : "text-sm text-muted-foreground"}>
-        {label}
-      </dt>
+      <dd className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
+        <CountUp to={value} />
+      </dd>
+      <dt className="mt-1 text-sm text-muted-foreground">{label}</dt>
     </div>
   );
 }
