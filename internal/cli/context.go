@@ -312,11 +312,3 @@ func scopeFromFlags(cmd *cobra.Command) (string, error) {
 	}
 	return scopeStr, nil
 }
-
-func currentDir() string {
-	d, err := os.Getwd()
-	if err != nil {
-		return "(unknown)"
-	}
-	return d
-}
