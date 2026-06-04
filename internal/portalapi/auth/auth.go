@@ -211,7 +211,7 @@ func (l *LazyValidator) ensure(ctx context.Context) (*Validator, error) {
 func (l *LazyValidator) Validate(ctx context.Context, rawToken string) (User, error) {
 	v, err := l.ensure(ctx)
 	if err != nil {
-		return User{}, fmt.Errorf("%w: %v", ErrAuthUnavailable, err)
+		return User{}, fmt.Errorf("%w: %w", ErrAuthUnavailable, err)
 	}
 	return v.Validate(ctx, rawToken)
 }
