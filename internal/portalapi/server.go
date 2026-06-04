@@ -29,7 +29,7 @@ type Server struct {
 
 	logger     *slog.Logger
 	metrics    *metricsRegistry
-	validator  *auth.Validator // nil when auth is disabled
+	validator  tokenValidator // nil when auth is disabled
 	activation *activationRing
 }
 
@@ -39,21 +39,41 @@ type snapshot struct {
 	refreshedAt time.Time
 }
 
+// tokenValidator abstracts bearer-token validation so the server can hold
+// either an eager *auth.Validator or an *auth.LazyValidator that tolerates an
+// IdP which is unavailable at startup. Production uses the lazy variant so a
+// missing/unhealthy realm cannot crash the boot path.
+type tokenValidator interface {
+	Validate(ctx context.Context, rawToken string) (auth.User, error)
+}
+
 // New constructs the server. It does NOT perform the first registry read;
 // that happens asynchronously in RunRefreshLoop so the HTTP server can
 // start serving /healthz immediately.
 func New(cfg Config, build BuildInfo) (*Server, error) {
-	var validator *auth.Validator
+	var validator tokenValidator
 	if cfg.AuthEnabled() {
 		rm, err := auth.LoadRoleMap(cfg.OIDCRoleMapPath)
 		if err != nil {
 			return nil, fmt.Errorf("load role map: %w", err)
 		}
-		v, err := auth.New(context.Background(), cfg.OIDCDiscoveryURL, cfg.OIDCClientID, rm)
-		if err != nil {
-			return nil, fmt.Errorf("oidc validator: %w", err)
+		// Build the OIDC validator LAZILY. The portal API is a read-only,
+		// anonymous-by-default catalog; its availability must NOT be coupled
+		// to the IdP being healthy at boot. Constructing the validator
+		// eagerly here and failing startup on error meant a transient IdP
+		// outage — or a Keycloak realm that vanished on restart — crash-looped
+		// the API and 503'd the entire catalog on every restart. The lazy
+		// validator initializes on first token use and self-heals once the
+		// IdP recovers, with no process restart. We attempt one best-effort
+		// warm-up so a healthy IdP is ready immediately, but never fail boot.
+		lv := auth.NewLazy(cfg.OIDCDiscoveryURL, cfg.OIDCClientID, rm)
+		if err := lv.Warm(context.Background()); err != nil {
+			slog.Default().Warn("OIDC discovery unreachable at startup; "+
+				"anonymous catalog stays available and token auth will "+
+				"initialize automatically once the IdP is reachable",
+				"discovery_url", cfg.OIDCDiscoveryURL, "err", err)
 		}
-		validator = v
+		validator = lv
 	}
 
 	return &Server{

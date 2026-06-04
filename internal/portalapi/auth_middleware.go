@@ -2,6 +2,7 @@ package portalapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/forge/fdh/internal/portalapi/auth"
@@ -29,6 +30,15 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			}
 			u, err := s.validator.Validate(r.Context(), raw)
 			if err != nil {
+				// The IdP being unreachable is a retryable server condition,
+				// not a bad token: surface 503 so clients (and the token's
+				// holder) retry rather than treating the token as invalid.
+				if errors.Is(err, auth.ErrAuthUnavailable) {
+					w.Header().Set("Retry-After", "10")
+					s.writeError(w, http.StatusServiceUnavailable, "auth_unavailable",
+						"identity provider is temporarily unreachable; retry shortly")
+					return
+				}
 				s.writeError(w, http.StatusUnauthorized, "unauthorized", err.Error())
 				return
 			}

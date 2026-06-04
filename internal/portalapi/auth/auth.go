@@ -15,10 +15,19 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"gopkg.in/yaml.v3"
 )
+
+// ErrAuthUnavailable signals that the IdP's discovery endpoint could not be
+// reached, so a presented token could not be validated. It is distinct from
+// an invalid-token error: the token may be perfectly valid; the server simply
+// cannot verify it right now. Callers should map it to 503 (retryable), not
+// 401, and MUST keep anonymous endpoints serving.
+var ErrAuthUnavailable = errors.New("auth temporarily unavailable")
 
 // Role precedence: anonymous < consumer < author < reviewer < publisher < admin.
 const (
@@ -127,6 +136,84 @@ func New(ctx context.Context, discoveryURL, clientID string, roleMap RoleMap) (*
 		verifier: provider.Verifier(verifierConfig),
 		roleMap:  roleMap,
 	}, nil
+}
+
+// LazyValidator defers OIDC discovery until the first time a token must be
+// validated, retrying on each attempt until the IdP is reachable. This
+// decouples API startup from IdP availability: the anonymous catalog stays
+// up even when the IdP is unreachable at boot, and token validation begins
+// working automatically once the IdP recovers — with no process restart.
+//
+// Rationale: the portal API is a read-only, anonymous-by-default catalog.
+// Constructing the validator eagerly at startup (and treating failure as
+// fatal) coupled the entire catalog's availability to the IdP being healthy
+// at that instant — a transient outage or a wiped realm crash-looped the API
+// and 503'd every endpoint. A successfully constructed inner Validator is
+// cached; construction failures are NOT cached, so the next call retries.
+type LazyValidator struct {
+	discoveryURL string
+	clientID     string
+	roleMap      RoleMap
+
+	mu    sync.Mutex
+	inner *Validator
+}
+
+// NewLazy returns a LazyValidator. It performs no network I/O; the IdP is
+// contacted lazily on first use (or eagerly, best-effort, via Warm).
+func NewLazy(discoveryURL, clientID string, roleMap RoleMap) *LazyValidator {
+	return &LazyValidator{
+		discoveryURL: discoveryURL,
+		clientID:     clientID,
+		roleMap:      roleMap,
+	}
+}
+
+// Warm attempts to construct the inner Validator now. A nil return means auth
+// is ready; a non-nil error means the IdP was unreachable and the
+// LazyValidator will retry on the next Validate. Intended for a best-effort
+// warm-up at startup that never fails the boot path.
+func (l *LazyValidator) Warm(ctx context.Context) error {
+	_, err := l.ensure(ctx)
+	return err
+}
+
+// Ready reports whether the inner Validator has been constructed.
+func (l *LazyValidator) Ready() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.inner != nil
+}
+
+// ensure returns a ready inner Validator, constructing and caching it on the
+// first success. Discovery is bounded by a 10s timeout so a hung IdP cannot
+// block token validation indefinitely while the lock is held.
+func (l *LazyValidator) ensure(ctx context.Context) (*Validator, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.inner != nil {
+		return l.inner, nil
+	}
+	dctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	v, err := New(dctx, l.discoveryURL, l.clientID, l.roleMap)
+	if err != nil {
+		return nil, err
+	}
+	l.inner = v
+	return v, nil
+}
+
+// Validate lazily initializes the underlying OIDC verifier, then validates
+// the token. When the IdP is unreachable it returns an error wrapping
+// ErrAuthUnavailable so callers can distinguish "cannot verify" (503) from
+// "token invalid" (401).
+func (l *LazyValidator) Validate(ctx context.Context, rawToken string) (User, error) {
+	v, err := l.ensure(ctx)
+	if err != nil {
+		return User{}, fmt.Errorf("%w: %v", ErrAuthUnavailable, err)
+	}
+	return v.Validate(ctx, rawToken)
 }
 
 // Validate parses + verifies a raw JWT and returns the User. The role is
