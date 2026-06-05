@@ -1,3 +1,22 @@
+# Headless Service governing the API StatefulSet (stable per-pod DNS).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fdh-portal.api.name" . }}-headless
+  labels:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  clusterIP: None
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+---
+# ClusterIP Service the Ingress routes to.
 apiVersion: v1
 kind: Service
 metadata:

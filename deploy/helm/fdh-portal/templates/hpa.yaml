@@ -8,7 +8,7 @@ metadata:
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
-    kind: Deployment
+    kind: StatefulSet
     name: {{ include "fdh-portal.api.name" . }}
   minReplicas: {{ .Values.api.hpa.minReplicas }}
   maxReplicas: {{ .Values.api.hpa.maxReplicas }}

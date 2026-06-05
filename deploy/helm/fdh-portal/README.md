@@ -43,17 +43,36 @@ See `values.yaml` for the full surface. Key knobs:
 | `ingress.host`                | `fdh.askenaz.dev`                                    | Public hostname.                                         |
 | `ingress.tls.secretName`      | `cloudflare-origin-tls`                              | TLS secret (Origin Cert recommended).                    |
 | `observability.otel.endpoint` | `""`                                                 | OTLP collector for trace export.                         |
+| `api.persistence.size`        | `1Gi`                                                | Size of each API pod's hub-clone PVC (StatefulSet).      |
+| `api.persistence.storageClassName` | `""` (cluster default)                          | StorageClass for the API PVC; empty uses the default.    |
+
+## Upgrading: Deployment → StatefulSet (chart v0.2.0)
+
+As of chart v0.2.0 the API runs as a **StatefulSet** with a per-pod
+PersistentVolumeClaim (`registry-data`, RWO) holding the hub clone, so a pod
+comes up Ready on restart without re-cloning. Kubernetes cannot change a
+resource's `kind` in place, so when upgrading from a chart that deployed the
+API as a Deployment, **delete the old Deployment first**:
+
+```sh
+kubectl -n fdh delete deployment fdh-portal-fdh-portal-api
+helm upgrade fdh-portal ./deploy/helm/fdh-portal -n fdh --reuse-values \
+  --set api.image.tag=<current-sha>
+```
+
+The brief API gap is masked by the cached web landing. Rollback with
+`helm rollback fdh-portal`.
 
 ## Smoke test
 
 After install:
 
 ```sh
-kubectl -n fdh wait --for=condition=available deploy/fdh-portal-api --timeout=120s
-kubectl -n fdh wait --for=condition=available deploy/fdh-portal-web --timeout=120s
+kubectl -n fdh rollout status statefulset/fdh-portal-fdh-portal-api --timeout=120s
+kubectl -n fdh rollout status deploy/fdh-portal-fdh-portal-web --timeout=120s
 
 # Tunnel to the API and check the catalog:
-kubectl -n fdh port-forward svc/fdh-portal-api 18080:8080 &
+kubectl -n fdh port-forward svc/fdh-portal-fdh-portal-api 18080:8080 &
 curl -s http://localhost:18080/api/v1/skills | jq '.items | length'
 ```
 
@@ -65,6 +84,7 @@ and refreshed its catalog. Open the portal at `https://<host>`.
 - Keycloak itself (use the existing instance at `keycloak.askenaz.dev`).
 - Prometheus / OTel collector — assumed to be running in the cluster
   (the chart only enables the ServiceMonitor + emits OTLP).
-- A database — the MVP is stateless.
+- A database — the API is stateless apart from its per-pod hub-clone PVC
+  (a rebuildable cache of the catalog, not a datastore).
 - Code signing or supply-chain attestation — see the `ops-readiness`
   change for that work.
