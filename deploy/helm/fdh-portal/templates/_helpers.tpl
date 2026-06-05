@@ -22,6 +22,18 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- end -}}
 
+{{/*
+Selector labels: the STABLE subset used in Deployment/StatefulSet matchLabels
+and Service selectors. These MUST NOT include version- or chart-dependent
+labels (app.kubernetes.io/version, helm.sh/chart) — selectors are immutable,
+so a chart-version bump would otherwise break the upgrade and orphan Services
+from their pods. Component is added at each call site.
+*/}}
+{{- define "fdh-portal.selectorLabels" -}}
+app.kubernetes.io/name: {{ .Chart.Name }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
 {{- define "fdh-portal.api.image" -}}
 {{- $tag := .Values.api.image.tag | default .Chart.AppVersion -}}
 {{ .Values.api.image.repository }}:{{ $tag }}
