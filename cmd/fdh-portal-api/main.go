@@ -46,7 +46,12 @@ func main() {
 		"build_date", buildDate,
 		"addr", cfg.Addr,
 		"registry_source", cfg.RegistrySource(),
+		"idp_profile", cfg.IDPProfile,
 	)
+	if cfg.AuthEnabled() && !cfg.IDPProfileValid() {
+		logger.Warn("unrecognized FDH_PORTAL_IDP_PROFILE (informational only; auth is unaffected)",
+			"idp_profile", cfg.IDPProfile, "expected", "local|external")
+	}
 
 	srv, err := portalapi.New(cfg, portalapi.BuildInfo{
 		Version: version, Commit: commit, BuildDate: buildDate,

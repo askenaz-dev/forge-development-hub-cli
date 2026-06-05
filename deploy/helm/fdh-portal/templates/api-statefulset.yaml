@@ -57,6 +57,8 @@ spec:
               value: {{ .Values.oidc.clientID | quote }}
             - name: OIDC_ROLE_MAP_PATH
               value: /config/role-map.yaml
+            - name: FDH_PORTAL_IDP_PROFILE
+              value: {{ .Values.oidc.profile | default "local" | quote }}
             {{- if .Values.observability.otel.endpoint }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.observability.otel.endpoint | quote }}
