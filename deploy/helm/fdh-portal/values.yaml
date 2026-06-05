@@ -25,6 +25,13 @@ api:
     minReplicas: 2
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
+  # Per-pod persistent volume for the hub catalog clone (StatefulSet
+  # volumeClaimTemplates). The cluster has only RWO local-path storage, so
+  # each replica gets its own small PVC; the persisted clone lets a pod come
+  # up Ready on restart without re-cloning from the remote at boot.
+  persistence:
+    storageClassName: ""   # empty -> cluster default StorageClass (local-path here)
+    size: 1Gi
 
 web:
   replicaCount: 2

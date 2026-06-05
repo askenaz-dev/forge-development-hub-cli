@@ -1,11 +1,17 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "fdh-portal.api.name" . }}
   labels:
     {{- include "fdh-portal.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
+  # StatefulSet (not Deployment) so each replica gets its OWN persistent hub
+  # clone via volumeClaimTemplates. The cluster has only RWO, node-local
+  # storage (local-path; no RWX), so a single shared volume is impossible.
+  # The persisted clone lets a pod come up Ready on restart WITHOUT re-cloning
+  # from the remote at boot — the refresh loop keeps it fresh afterwards.
+  serviceName: {{ include "fdh-portal.api.name" . }}-headless
   replicas: {{ .Values.api.replicaCount }}
   selector:
     matchLabels:
@@ -39,10 +45,10 @@ spec:
               value: {{ .Values.portal.refreshInterval | quote }}
             - name: FDH_PORTAL_REGISTRY_LOCAL_PATH
               value: /var/fdh/registry
-            # The wire-protocol handlers (/v1/*) read the hub catalog from
-            # this filesystem path. We reuse the same GitRegistry clone dir
-            # so wire handlers see the catalog as soon as the first refresh
-            # finishes. No separate git-sync sidecar needed for v1.
+            # Persisted per-pod clone (volumeClaimTemplates below). Both the
+            # wire handlers (/v1/*) and the in-memory snapshot read the catalog
+            # from this path; on restart the PVC already holds the working
+            # tree, so /readyz flips without a boot-time network clone.
             - name: FDH_PORTAL_HUB_PATH
               value: /var/fdh/registry
             - name: OIDC_DISCOVERY_URL
@@ -58,7 +64,7 @@ spec:
           volumeMounts:
             - name: role-map
               mountPath: /config
-            - name: registry-cache
+            - name: registry-data
               mountPath: /var/fdh/registry
           livenessProbe:
             httpGet:
@@ -75,5 +81,20 @@ spec:
         - name: role-map
           configMap:
             name: {{ .Values.oidc.roleMapConfigMap }}
-        - name: registry-cache
-          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: registry-data
+        labels:
+          {{- include "fdh-portal.labels" . | nindent 10 }}
+          app.kubernetes.io/component: api
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # Defensive defaults so the template renders even when api.persistence
+        # is absent from the merged values (e.g. `helm upgrade --reuse-values`
+        # on a release created before this key existed).
+        {{- with (.Values.api.persistence | default dict).storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ (.Values.api.persistence | default dict).size | default "1Gi" | quote }}
