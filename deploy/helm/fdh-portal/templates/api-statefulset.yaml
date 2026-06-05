@@ -15,7 +15,7 @@ spec:
   replicas: {{ .Values.api.replicaCount }}
   selector:
     matchLabels:
-      {{- include "fdh-portal.labels" . | nindent 6 }}
+      {{- include "fdh-portal.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: api
   template:
     metadata:
