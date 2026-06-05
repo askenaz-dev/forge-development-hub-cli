@@ -65,7 +65,15 @@ portal:
   refreshInterval: "60s"
 
 oidc:
-  # Full discovery URL — Keycloak realm endpoint.
+  # Deployment profile: "local" (self-hosted in-cluster OIDC, e.g. Keycloak)
+  # or "external" (a managed OIDC provider: Entra ID / Okta / Auth0 / Google).
+  # Informational only — the portal speaks standard OIDC either way via the
+  # discoveryURL/clientID below; no code path is provider-specific. The portal
+  # also tolerates the IdP being unreachable (the anonymous catalog stays up).
+  # See docs/idp-profiles.md.
+  profile: "local"
+  # Full discovery URL — for `local`, the in-cluster Keycloak realm; for
+  # `external`, the managed IdP's issuer / discovery URL.
   discoveryURL: "https://keycloak.askenaz.dev/realms/askenaz"
   clientID: "fdh-portal"
   # Reference a Kubernetes Secret holding the client secret + Auth.js

@@ -6,6 +6,12 @@
  * API validates tokens independently against the same Keycloak JWKS, so
  * the frontend and backend agree on identity without sharing session state.
  *
+ * NOTE: NextAuth's "keycloak" provider is a generic OIDC client — the name is
+ * incidental. The same AUTH_KEYCLOAK_* vars point at whatever OIDC issuer the
+ * deployment's IdP profile selects: a self-hosted Keycloak ("local") or a
+ * managed provider like Entra ID / Okta / Auth0 ("external"). No code change is
+ * needed to switch profiles. See docs/idp-profiles.md.
+ *
  * Environment variables consumed at startup:
  *   AUTH_SECRET                — random 32+ byte secret for cookie signing
  *   AUTH_KEYCLOAK_ID           — OIDC client_id registered in Keycloak

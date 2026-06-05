@@ -43,6 +43,13 @@ type Config struct {
 	// to portal roles. Empty means every authenticated user is 'consumer'.
 	OIDCRoleMapPath string
 
+	// IDPProfile names the IdP deployment profile: "local" (self-hosted
+	// in-cluster OIDC, e.g. Keycloak) or "external" (a managed OIDC provider
+	// such as Entra ID / Okta / Auth0 / Google). It is informational only —
+	// the portal speaks standard OIDC either way via OIDCDiscoveryURL /
+	// OIDCClientID, and no code path is provider-specific. Default "local".
+	IDPProfile string
+
 	// OTLPEndpoint is the OTel collector endpoint for trace export.
 	OTLPEndpoint string
 
@@ -67,6 +74,7 @@ func LoadConfig() (Config, error) {
 		OIDCDiscoveryURL:  os.Getenv("OIDC_DISCOVERY_URL"),
 		OIDCClientID:      os.Getenv("OIDC_CLIENT_ID"),
 		OIDCRoleMapPath:   os.Getenv("OIDC_ROLE_MAP_PATH"),
+		IDPProfile:        envOr("FDH_PORTAL_IDP_PROFILE", "local"),
 		OTLPEndpoint:      os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 		HubPath:           envOr("FDH_PORTAL_HUB_PATH", "/srv/hub"),
 	}
@@ -101,6 +109,17 @@ func (c Config) RegistrySource() string {
 // When false, every request is treated as anonymous.
 func (c Config) AuthEnabled() bool {
 	return strings.TrimSpace(c.OIDCDiscoveryURL) != ""
+}
+
+// IDPProfileValid reports whether IDPProfile is a recognized profile.
+// Unknown values are non-fatal: callers log them and proceed (the field is
+// informational and never gates the anonymous catalog).
+func (c Config) IDPProfileValid() bool {
+	switch c.IDPProfile {
+	case "local", "external":
+		return true
+	}
+	return false
 }
 
 func envOr(key, fallback string) string {
