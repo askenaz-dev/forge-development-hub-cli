@@ -11,6 +11,8 @@ import {
   Bot,
   Webhook,
   ShieldCheck,
+  Download,
+  Globe,
 } from "lucide-react";
 import {
   Card,
@@ -32,6 +34,7 @@ import { CopyCommand } from "@/components/copy-command";
  */
 
 const HUB = "https://github.com/askenaz-dev/forge-development-hub";
+const CLI = "https://github.com/askenaz-dev/forge-development-hub-cli";
 
 export default async function DocsPage({
   params,
@@ -132,6 +135,65 @@ export default async function DocsPage({
               </Card>
             );
           })}
+        </div>
+      </section>
+
+      {/* Install & use */}
+      <section className="mx-auto mt-16 max-w-5xl">
+        <h2 className="text-xl font-semibold tracking-tight">
+          {t("installHeading")}
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">{t("installLead")}</p>
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          {/* From the Forge hub */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Download className="h-5 w-5 text-ember" aria-hidden="true" />
+                {t("installHubTitle")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {t("installHubBody")}
+              </p>
+              <CopyCommand command="fdh init" />
+              <Link
+                href="/install"
+                className="inline-block text-sm font-medium text-ember hover:underline"
+              >
+                {t("installHubCta")} →
+              </Link>
+            </CardContent>
+          </Card>
+
+          {/* From an external source */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Globe className="h-5 w-5 text-ember" aria-hidden="true" />
+                {t("installExtTitle")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {t("installExtBody")}
+              </p>
+              <CopyCommand command="fdh config set registry.url https://github.com/your-org/your-hub.git" />
+              <p className="text-xs text-muted-foreground">
+                {t("installExtNote")}
+              </p>
+              <Link
+                href={`${CLI}/blob/main/docs/quickstart.md`}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-ember hover:underline"
+              >
+                {t("installQuickstartCta")}
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </CardContent>
+          </Card>
         </div>
       </section>
 
