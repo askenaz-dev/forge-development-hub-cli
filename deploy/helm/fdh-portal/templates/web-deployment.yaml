@@ -30,6 +30,12 @@ spec:
               value: "http://{{ include "fdh-portal.api.name" . }}:8080"
             - name: NEXT_PUBLIC_SITE_URL
               value: "https://{{ .Values.ingress.host }}"
+            # Public origin Auth.js (NextAuth) uses for sign-in/callback/error
+            # URLs. Behind Cloudflare+ingress, host auto-detection lands on the
+            # pod's internal 0.0.0.0:3000 (breaking the callback redirect_uri and
+            # the error redirect), so pin it explicitly.
+            - name: AUTH_URL
+              value: "https://{{ .Values.ingress.host }}"
             - name: AUTH_TRUST_HOST
               value: "true"
             - name: AUTH_KEYCLOAK_ID
