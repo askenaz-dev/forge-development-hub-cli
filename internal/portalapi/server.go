@@ -171,12 +171,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/admin/activation", s.handleGetActivation)
 
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPI)
-	// API documentation UIs.
-	mux.HandleFunc("GET /docs", s.handleDocsIndex)
-	mux.HandleFunc("GET /docs/", s.handleDocsIndex)
-	mux.HandleFunc("GET /docs/swagger", s.handleDocsIndex)
-	mux.HandleFunc("GET /docs/redoc", s.handleDocsIndex)
-	mux.HandleFunc("GET /redoc", s.handleRedoc)
+	// API documentation UIs, namespaced under /api so the bare /docs path
+	// belongs to the web portal's human documentation (see ingress + web).
+	mux.HandleFunc("GET /api/docs", s.handleDocsIndex)
+	mux.HandleFunc("GET /api/docs/", s.handleDocsIndex)
+	mux.HandleFunc("GET /api/docs/swagger", s.handleDocsIndex)
+	mux.HandleFunc("GET /api/docs/redoc", s.handleDocsIndex)
+	mux.HandleFunc("GET /api/redoc", s.handleRedoc)
 	mux.Handle("GET /metrics", s.metrics.handler())
 
 	// Order: auth attaches user to context first; logging captures the
