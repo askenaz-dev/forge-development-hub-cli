@@ -108,6 +108,18 @@ var detectors = []Detector{
 // the same line: `# fdh:allow secret/github-token`.
 var allowlistRE = regexp.MustCompile(`fdh:allow\s+(\S+)`)
 
+// exampleMarkerRE matches the documented-example credential convention:
+// cloud providers publish canonical placeholder credentials whose value
+// embeds an uppercase `EXAMPLE` (e.g. AWS's `AKIAIOSFODNN7EXAMPLE` access
+// key ID and `…bPxRfiCYEXAMPLEKEY` secret). Production secret scanners
+// (gitleaks, trufflehog, detect-secrets) allowlist these, because otherwise
+// security *documentation* and test fixtures that cite the shape of a secret
+// flag themselves. The marker is checked against the matched token only, and
+// the allowance is scoped to `secret/*` detectors (see scanFile) so a stray
+// `EXAMPLE` in, say, a `curl … | sh` URL path never weakens a code-pattern
+// detector.
+var exampleMarkerRE = regexp.MustCompile(`EXAMPLE`)
+
 // Scan walks paths and returns findings for every text file under
 // them. Symbol links, binary files, and managed-marker sidecars are
 // skipped.
@@ -173,10 +185,18 @@ func scanFile(path string, res *Result) {
 	for i, line := range lines {
 		allowed := allowlistMatches(line)
 		for _, det := range detectors {
-			if !det.RE.MatchString(line) {
+			match := det.RE.FindString(line)
+			if match == "" {
 				continue
 			}
 			if _, skip := allowed[det.Rule]; skip {
+				continue
+			}
+			// Documented-example allowlist: a secret-shaped token whose
+			// value carries the canonical `EXAMPLE` marker (AWS et al.) is a
+			// published placeholder, not a live credential. Scoped to
+			// secret/* so code-pattern detectors are unaffected.
+			if strings.HasPrefix(det.Rule, "secret/") && exampleMarkerRE.MatchString(match) {
 				continue
 			}
 			res.Findings = append(res.Findings, Finding{

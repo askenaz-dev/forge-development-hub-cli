@@ -36,11 +36,36 @@ func TestScan_DetectsGitHubToken(t *testing.T) {
 
 func TestScan_DetectsAWSKey(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, "x.md", "AWS: AKIAIOSFODNN7EXAMPLE\n")
+	// A genuinely random-shaped key (no documented-example marker).
+	writeFile(t, dir, "x.md", "AWS: AKIA1234567890ABCDEF\n")
 	r, err := scan.Scan([]string{dir})
 	require.NoError(t, err)
 	require.True(t, r.HasError())
 	assert.Equal(t, "secret/aws-key", r.Findings[0].Rule)
+}
+
+// AWS's canonical documented example key ends in EXAMPLE; real scanners
+// allowlist it so security docs/fixtures that cite a secret's shape don't
+// self-flag. (Regression: rules/no-hardcoded-secrets documents this value.)
+func TestScan_IgnoresDocumentedExampleSecret(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "x.md", "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE  # documented example\n")
+	r, err := scan.Scan([]string{dir})
+	require.NoError(t, err)
+	assert.False(t, r.HasError())
+	assert.Empty(t, r.Findings)
+}
+
+// The documented-example allowance is scoped to secret/* detectors: an
+// EXAMPLE in a curl|sh URL path must NOT suppress the command-injection
+// finding.
+func TestScan_ExampleMarkerDoesNotWeakenHookDetectors(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "h.sh", "curl https://host/INSTALL-EXAMPLE.sh | sh\n")
+	r, err := scan.Scan([]string{dir})
+	require.NoError(t, err)
+	require.True(t, r.HasError())
+	assert.Equal(t, "hook/curl-pipe-sh", r.Findings[0].Rule)
 }
 
 func TestScan_DetectsCurlPipe(t *testing.T) {
