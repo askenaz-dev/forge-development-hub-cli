@@ -20,6 +20,10 @@ const nextConfig = {
     // Disabled for now — re-enable in a follow-up that either casts
     // hrefs or adopts next-intl's typed Link wrapper.
     typedRoutes: false,
+    // Enables instrumentation.ts `register()` (stable in Next 15; behind this
+    // flag on 14.2). We use it to install the no-compression fetch shim at
+    // process startup so background ISR revalidations are covered too.
+    instrumentationHook: true,
   },
   eslint: {
     // ESLint runs as a separate `pnpm lint` step. Builds skip it to keep
