@@ -36,7 +36,15 @@ async function resolveVersionTag(): Promise<string> {
       `https://api.github.com/repos/${REPO}/releases/latest`,
       {
         next: { revalidate: 3600 },
-        headers: { accept: "application/vnd.github+json" },
+        headers: {
+          accept: "application/vnd.github+json",
+          // GitHub's API serves `zstd`/`br`-compressed responses, which Node
+          // 22's fetch/undici can't decompress — it throws
+          // "controller[kState].transformAlgorithm is not a function" while
+          // Next.js reads the body for its ISR cache, polluting the logs and
+          // forcing the FALLBACK_VERSION. Ask for an uncompressed response.
+          "accept-encoding": "identity",
+        },
       }
     );
     if (res.ok) {
