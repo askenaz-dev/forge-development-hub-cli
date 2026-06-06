@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getTranslations } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
 import {
   BookOpen,
   PenLine,
@@ -33,7 +33,13 @@ import { CopyCommand } from "@/components/copy-command";
 
 const HUB = "https://github.com/askenaz-dev/forge-development-hub";
 
-export default async function DocsPage() {
+export default async function DocsPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  setRequestLocale(locale);
   const t = await getTranslations("docs");
 
   const primitives = [
