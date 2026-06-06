@@ -26,6 +26,7 @@ export async function SiteNav() {
     { href: "/rules", label: t("rules") },
     { href: "/agents", label: t("agents") },
     { href: "/hooks", label: t("hooks") },
+    { href: "/docs", label: t("docs") },
     { href: "/install", label: t("install") },
     { href: "/onboarding", label: t("getStarted") },
   ];
