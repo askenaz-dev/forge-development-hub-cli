@@ -50,6 +50,42 @@ func (r *Result) HasError() bool {
 	return false
 }
 
+// Registry scan_status enum values (capability portal-scan-status). These are
+// the verdicts the producer/portal record per component version.
+const (
+	StatusPass = "pass" // scanned, no blocking findings
+	StatusWarn = "warn" // scanned, non-blocking findings
+	StatusFail = "fail" // scanned, blocking findings
+	StatusNone = "none" // not scanned / no result (e.g. scan errored)
+)
+
+// Verdict maps a scan Result to the registry scan_status enum: any `error`
+// finding → "fail"; otherwise any `warning` → "warn"; otherwise "pass".
+// `info` findings are advisory and do not downgrade a clean verdict.
+func Verdict(r *Result) string {
+	status := StatusPass
+	for _, f := range r.Findings {
+		switch f.Severity {
+		case SeverityError:
+			return StatusFail
+		case SeverityWarning:
+			status = StatusWarn
+		}
+	}
+	return status
+}
+
+// DirStatus scans dir and returns its scan_status verdict. A scan that cannot
+// run returns ("none", err) so callers can record "none" without aborting the
+// surrounding build/refresh.
+func DirStatus(dir string) (string, error) {
+	res, err := Scan([]string{dir})
+	if err != nil {
+		return StatusNone, err
+	}
+	return Verdict(res), nil
+}
+
 // Detector is one named scan rule.
 type Detector struct {
 	Rule     string

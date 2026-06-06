@@ -53,6 +53,38 @@ any other namespace return 404. The hub's `registry.yaml v2` schema has
 no `namespace` field; when multi-tenant namespacing arrives, the wire
 protocol gains a real second segment without breaking these URLs.
 
+### Security scan status
+
+Every component carries a real `scan_status` — the verdict of `fdh scan`
+(capability `fdh-scan-security`) over its bundle, mapped to the enum
+`pass | warn | fail | none`:
+
+| Verdict | Meaning |
+| ------- | ------- |
+| `pass`  | Scanned, no blocking findings. |
+| `warn`  | Scanned, non-blocking findings (e.g. a JWT or `eval(`). |
+| `fail`  | Scanned, blocking findings (e.g. a leaked token / `curl … \| sh`). |
+| `none`  | Not scanned / no result (the scan errored or the version was not re-scanned). |
+
+`fail` is **informational** in this release — it is displayed, not enforced:
+a failing component still installs. Gating is a separate policy decision.
+
+**Where the scan runs.** Two independent producers compute the verdict; there
+is no extra CI step to wire — scanning is inherent to each catalog build:
+
+- **Portal (the served catalog).** The portal scans each component's tip
+  bundle while building its in-memory catalog (`buildHubIndex`, run on every
+  `FDH_PORTAL_REFRESH_INTERVAL` refresh and read by both `/v1/*` and
+  `/api/v1/*`). Results are memoized by canonical content hash, so unchanged
+  bundles are scanned at most once. A scan that errors records `none` and never
+  fails the refresh. Only the tip (latest) version is scanned; older tagged
+  versions report `none`.
+- **Offline registry producer (`scripts/build-registry`).** When it builds the
+  registry published for the CLI consumer (`index.json` + per-version
+  `manifest.json`), it runs the same scan with a content-hash cache seeded from
+  the prior build's `index.json` (so unchanged bundles aren't re-scanned across
+  invocations, and a prior `none` is retried).
+
 ## Configuration
 
 | Env var                              | Default     | Purpose                                                                            |

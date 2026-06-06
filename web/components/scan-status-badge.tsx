@@ -2,19 +2,18 @@ import { cn } from "@/lib/utils";
 
 /**
  * ScanStatusBadge renders a component's security scan status as a colored,
- * user-facing label instead of the raw enum.
- *
- * NOTE: the portal currently serves "none" as a placeholder for every
- * component — the scan pipeline is not wired end-to-end yet — so "none" is
- * rendered optimistically as a green "Scanned". Once real scan results are
- * served (see the OpenSpec change `wire-portal-scan-status`), "none" should
- * map to a neutral "Unscanned" state.
+ * user-facing label instead of the raw enum. The portal serves the real
+ * fdh-scan verdict per component (capability portal-scan-status):
+ *   pass → green "Scanned", warn → amber "Warnings", fail → red "Failed",
+ *   none → neutral "Unscanned" (not scanned / no result available).
  */
+const UNSCANNED = { label: "Unscanned", className: "text-muted-foreground" };
+
 const SCAN_STATUS: Record<string, { label: string; className: string }> = {
   pass: { label: "Scanned", className: "text-emerald-500" },
-  none: { label: "Scanned", className: "text-emerald-500" },
   warn: { label: "Warnings", className: "text-amber-500" },
   fail: { label: "Failed", className: "text-destructive" },
+  none: UNSCANNED,
 };
 
 export function ScanStatusBadge({
@@ -24,6 +23,6 @@ export function ScanStatusBadge({
   status: string;
   className?: string;
 }) {
-  const s = SCAN_STATUS[status] ?? { label: "Scanned", className: "text-emerald-500" };
+  const s = SCAN_STATUS[status] ?? UNSCANNED;
   return <span className={cn("font-mono", s.className, className)}>{s.label}</span>;
 }

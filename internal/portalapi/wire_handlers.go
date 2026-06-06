@@ -21,12 +21,13 @@ import (
 
 // Wire-protocol constants. These are sentinels until the hub formalizes
 // per-version metadata (registry.yaml v3+); pinning to fixed values keeps
-// every response's ETag stable across portal pod respins.
+// every response's ETag stable across portal pod respins. scan_status is the
+// exception — it is now the real fdh-scan verdict (capability
+// portal-scan-status), not a sentinel.
 const (
 	wireVersion     = "latest"
 	wirePublishedAt = "1970-01-01T00:00:00Z"
 	wirePublishedBy = "hub"
-	wireScanStatus  = "none"
 )
 
 // deriveNamespace maps a component's owner_team to its wire namespace per the
@@ -211,7 +212,7 @@ func (s *Server) handleWireIndex(w http.ResponseWriter, r *http.Request) {
 			Tags:          comp.Tags,
 			LatestVersion: latest.Version,
 			LatestHash:    latest.ContentHash,
-			ScanStatus:    wireScanStatus,
+			ScanStatus:    s.scanStatusFor(latest.ContentHash, bundleDir),
 		})
 	}
 
@@ -246,6 +247,8 @@ func (s *Server) handleWireManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	compStatus := s.componentScanStatus(comp, vers)
+	latest := vers[0].Version
 	entries := make([]wireVersionEntry, 0, len(vers))
 	for _, v := range vers {
 		entries = append(entries, wireVersionEntry{
@@ -253,7 +256,7 @@ func (s *Server) handleWireManifest(w http.ResponseWriter, r *http.Request) {
 			ContentHash: v.ContentHash,
 			PublishedAt: v.PublishedAt.UTC().Format(time.RFC3339),
 			PublishedBy: wirePublishedBy,
-			ScanStatus:  wireScanStatus,
+			ScanStatus:  versionScanStatus(v, latest, compStatus),
 			Signature:   v.Signature,
 		})
 	}

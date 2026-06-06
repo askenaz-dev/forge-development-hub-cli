@@ -35,6 +35,7 @@ import (
 	"github.com/forge/fdh/pkg/bundle"
 	"github.com/forge/fdh/pkg/hubregistry"
 	"github.com/forge/fdh/pkg/registry"
+	"github.com/forge/fdh/pkg/scan"
 )
 
 func main() {
@@ -71,6 +72,12 @@ func run(hubDir, dest string) error {
 
 	idx := registry.Index{SchemaVersion: 2, Registry: "git:forge-development-hub"}
 
+	// Scan cache keyed by canonical content hash: unchanged bundles are not
+	// re-scanned. Seeded from a prior build's index.json in dest so the cache
+	// survives across separate producer invocations (only real verdicts are
+	// reused; a prior "none" is retried so transient scan errors self-heal).
+	scanByHash := loadPriorScanStatus(dest)
+
 	for _, c := range reg.Components {
 		kindPlural := hubregistry.KindDir(c.Kind)
 		if kindPlural == "" {
@@ -90,6 +97,20 @@ func run(hubDir, dest string) error {
 		hash, err := bundle.HashDir(srcDir)
 		if err != nil {
 			return fmt.Errorf("hash %s: %w", srcDir, err)
+		}
+
+		// Real security verdict from `fdh scan` (capability fdh-scan-security),
+		// cached by content hash. A scan that errors records "none" and never
+		// aborts the build.
+		scanStatus, cached := scanByHash[hash]
+		if !cached {
+			st, scanErr := scan.DirStatus(srcDir)
+			if scanErr != nil {
+				fmt.Fprintf(os.Stderr, "[scan] %s/%s@%s: %v (recording none)\n", ns, c.Name, version, scanErr)
+				st = scan.StatusNone
+			}
+			scanStatus = st
+			scanByHash[hash] = st
 		}
 
 		compDir := filepath.Join(dest, kindPlural, ns, c.Name)
@@ -123,7 +144,7 @@ func run(hubDir, dest string) error {
 				ContentHash: hash,
 				PublishedAt: publishedAt,
 				PublishedBy: "registry-producer",
-				ScanStatus:  "none",
+				ScanStatus:  scanStatus,
 				Status:      registry.StatusActive,
 			}},
 		}
@@ -140,10 +161,10 @@ func run(hubDir, dest string) error {
 			Tags:          c.Tags,
 			LatestVersion: version,
 			LatestHash:    hash,
-			ScanStatus:    "none",
+			ScanStatus:    scanStatus,
 		})
 
-		fmt.Printf("published %-5s %s/%s@%s  hash=%s\n", c.Kind, ns, c.Name, version, hash[:12])
+		fmt.Printf("published %-5s %s/%s@%s  hash=%s  scan=%s\n", c.Kind, ns, c.Name, version, hash[:12], scanStatus)
 	}
 
 	if err := writeJSON(filepath.Join(dest, "index.json"), idx); err != nil {
@@ -185,6 +206,29 @@ func deriveNamespace(ownerTeam string) string {
 	out := strings.Trim(b.String(), "-")
 	if out == "" {
 		return "unknown"
+	}
+	return out
+}
+
+// loadPriorScanStatus best-effort reads a previous build's index.json from dest
+// and returns a content-hash → scan_status map for the content-hash scan cache.
+// Only real verdicts (pass/warn/fail) are seeded; "none"/empty entries are
+// omitted so a prior failed scan is retried on the next build. Any read/parse
+// failure yields an empty (non-nil) map — a fresh dest just scans everything.
+func loadPriorScanStatus(dest string) map[string]string {
+	out := map[string]string{}
+	data, err := os.ReadFile(filepath.Join(dest, "index.json"))
+	if err != nil {
+		return out
+	}
+	var prior registry.Index
+	if err := json.Unmarshal(data, &prior); err != nil {
+		return out
+	}
+	for _, e := range prior.Components {
+		if e.LatestHash != "" && e.ScanStatus != "" && e.ScanStatus != scan.StatusNone {
+			out[e.LatestHash] = e.ScanStatus
+		}
 	}
 	return out
 }

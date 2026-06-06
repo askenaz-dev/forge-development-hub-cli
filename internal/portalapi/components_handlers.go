@@ -114,9 +114,11 @@ func (s *Server) handleGetComponent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := strings.TrimRight(s.publicBaseURL(r), "/") + "/api/v1/components/" + kind + "/" + ns + "/" + name
+	compStatus := s.componentScanStatus(comp, vers)
+	latest := vers[0].Version
 	versions := make([]map[string]any, 0, len(vers))
 	for _, v := range vers {
-		versions = append(versions, componentVersionToJSON(base, v))
+		versions = append(versions, componentVersionToJSON(base, v, versionScanStatus(v, latest, compStatus)))
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
 		"kind":        kind,
@@ -147,9 +149,11 @@ func (s *Server) handleGetComponentVersion(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	base := strings.TrimRight(s.publicBaseURL(r), "/") + "/api/v1/components/" + kind + "/" + ns + "/" + name
+	compStatus := s.componentScanStatus(comp, vers)
+	latest := vers[0].Version
 	for _, v := range vers {
 		if v.Version == version {
-			s.writeJSON(w, http.StatusOK, componentVersionToJSON(base, v))
+			s.writeJSON(w, http.StatusOK, componentVersionToJSON(base, v, versionScanStatus(v, latest, compStatus)))
 			return
 		}
 	}
@@ -218,13 +222,13 @@ func componentEntryToSummary(e registry.IndexEntry) map[string]any {
 	}
 }
 
-func componentVersionToJSON(base string, v resolvedVersion) map[string]any {
+func componentVersionToJSON(base string, v resolvedVersion, scanStatus string) map[string]any {
 	out := map[string]any{
 		"version":      v.Version,
 		"content_hash": v.ContentHash,
 		"published_at": v.PublishedAt.UTC().Format(time.RFC3339),
 		"published_by": wirePublishedBy,
-		"scan_status":  wireScanStatus,
+		"scan_status":  scanStatus,
 		"document_url": base + "/versions/" + v.Version + "/document",
 	}
 	if v.Signature != "" {
