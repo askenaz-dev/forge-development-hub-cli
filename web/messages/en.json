@@ -11,7 +11,7 @@
     "closeMenu": "Close menu"
   },
   "landing": {
-    "eyebrow": "The hub for AI coding agents",
+    "eyebrow": "The harness fabric for AI coding agents",
     "tagline": "Forge once. Run in every agent.",
     "subhead": "Forge Development Hub centralizes, governs, and distributes skills, rules, agents, and hooks for Claude Code, GitHub Copilot, OpenAI Codex, and OpenCode.",
     "ctaInstall": "Install the CLI",

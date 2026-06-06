@@ -23,7 +23,11 @@ import { getLandingData } from "@/lib/landing-data";
  * Each section below the fold is wrapped in <Reveal> for an on-scroll entrance
  * that is disabled under prefers-reduced-motion.
  */
-export const revalidate = 300;
+// Render dynamically so the hero's live per-kind counts always reflect the
+// current catalog. (Static pre-render happens in CI where the API is
+// unreachable, which would otherwise bake the API-down fallback into the page
+// until the first ISR revalidation.)
+export const dynamic = "force-dynamic";
 
 export default async function LandingPage({
   params,
