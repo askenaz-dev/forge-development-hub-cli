@@ -17,6 +17,14 @@ spec:
         {{- include "fdh-portal.labels" . | nindent 8 }}
         app.kubernetes.io/component: web
     spec:
+      {{- with .Values.web.hostAliases }}
+      # Pin the IdP host in /etc/hosts so the OIDC backchannel never depends on
+      # the cluster's flaky DNS forward to public resolvers (which intermittently
+      # fails to resolve the IdP host and surfaces as NextAuth
+      # `error=Configuration` / "fetch failed" on the callback).
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: web
           image: {{ include "fdh-portal.web.image" . | quote }}
