@@ -87,7 +87,14 @@ spec:
     - metadata:
         name: registry-data
         labels:
-          {{- include "fdh-portal.labels" . | nindent 10 }}
+          # STABLE subset only (name + instance), plus component. volumeClaimTemplates
+          # is an IMMUTABLE StatefulSet field, so the chart/version-dependent labels
+          # in fdh-portal.labels (helm.sh/chart, app.kubernetes.io/version,
+          # managed-by) must NOT be stamped here — otherwise a chart-version bump
+          # makes `helm upgrade` reject the VCT change ("updates to statefulset spec
+          # for fields other than 'template' … are forbidden"). Mirrors the selector
+          # above; see the rationale on fdh-portal.selectorLabels.
+          {{- include "fdh-portal.selectorLabels" . | nindent 10 }}
           app.kubernetes.io/component: api
       spec:
         accessModes: ["ReadWriteOnce"]

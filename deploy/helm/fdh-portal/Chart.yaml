@@ -9,13 +9,16 @@ description: |
   configuring the OIDC discovery URL and client secret via values.yaml +
   a referenced Kubernetes Secret.
 type: application
-# Keep `version` PINNED. It feeds the `helm.sh/chart` label, which the API
-# StatefulSet stamps onto its volumeClaimTemplates — an immutable field. Bumping
-# it makes an in-place `helm upgrade` fail ("updates to statefulset spec for
-# fields other than 'template' … are forbidden"). Ship template changes (e.g.
-# ingress paths) WITHOUT a version bump. Decoupling this (VCT labels →
-# selectorLabels) needs a one-time orphan-delete + recreate of the StatefulSet.
-version: 0.2.0
+# `version` may be bumped normally. It feeds the `helm.sh/chart` label, but the
+# API StatefulSet's volumeClaimTemplates now stamp only the STABLE selectorLabels
+# (name + instance + component) — NOT chart/version-dependent labels — so a
+# version bump no longer mutates the immutable VCT field and an in-place
+# `helm upgrade` succeeds. (Previously PINNED at 0.2.0 because the VCT carried the
+# full label set incl. helm.sh/chart; decoupling it required a one-time
+# orphan-delete + StatefulSet recreate, performed while on 0.2.0. 0.2.1 is the
+# first version bumped in-place under the new scheme. See the rationale in
+# templates/api-statefulset.yaml.)
+version: 0.2.1
 appVersion: "0.1.0"
 keywords:
   - fdh
