@@ -29,6 +29,19 @@
 
 import NextAuth from "next-auth";
 import Keycloak from "next-auth/providers/keycloak";
+import { customFetch } from "next-auth";
+
+// Cloudflare may Brotli-compress (`content-encoding: br`) the responses from
+// Keycloak. Node 22's undici/DecompressionStream has no brotli support, so it
+// throws "controller[kState].transformAlgorithm is not a function" — which
+// crashes Auth.js's server-side OIDC token exchange and surfaces as a 502 on
+// /api/auth/callback. Force uncompressed responses for every Auth.js → Keycloak
+// fetch so there is nothing to decompress.
+const noCompressionFetch: typeof fetch = (input, init) => {
+  const headers = new Headers(init?.headers);
+  headers.set("accept-encoding", "identity");
+  return fetch(input, { ...init, headers });
+};
 
 const issuer = process.env.AUTH_KEYCLOAK_ISSUER;
 // In local-dev with Docker, the container's `localhost` is itself, not the
@@ -50,6 +63,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       wellKnown,
       // PKCE is enforced by default; we keep it explicit for clarity.
       checks: ["pkce", "state"],
+      // Avoid the Node-22 brotli decompression crash on the token exchange.
+      [customFetch]: noCompressionFetch,
     }),
   ],
   callbacks: {
