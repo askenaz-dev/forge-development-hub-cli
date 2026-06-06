@@ -31,10 +31,15 @@ export const metadata: Metadata = {
     template: "%s · Forge Development Hub",
   },
   description:
-    "Discover, install, and govern Agent Skills across Claude Code, GitHub Copilot, OpenAI Codex, and OpenCode.",
+    "Discover, install, and govern skills, rules, agents, and hooks across Claude Code, GitHub Copilot, OpenAI Codex, and OpenCode.",
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
   ),
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default async function LocaleLayout({

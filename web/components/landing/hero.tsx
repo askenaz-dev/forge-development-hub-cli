@@ -60,13 +60,22 @@ export async function Hero({ data }: { data: LandingData }) {
             </Button>
           </div>
 
-          {/* Live stat chips */}
-          <dl className="mx-auto mt-12 flex max-w-lg flex-wrap items-center justify-center gap-x-10 gap-y-4">
-            {data.live && (
-              <Stat value={data.total} label={t("statComponents")} />
+          {/* Live stat chips — the catalog broken down by primitive kind. */}
+          <dl className="mx-auto mt-12 flex max-w-2xl flex-wrap items-center justify-center gap-x-10 gap-y-4">
+            {data.live ? (
+              <>
+                <Stat value={data.byKind.skill} label={t("statSkills")} />
+                <Stat value={data.byKind.rule} label={t("statRules")} />
+                <Stat value={data.byKind.agent} label={t("statAgents")} />
+                <Stat value={data.byKind.hook} label={t("statHooks")} />
+              </>
+            ) : (
+              // API down: show the static facts that don't depend on the catalog.
+              <>
+                <Stat value={SUPPORTED_AGENT_COUNT} label={t("statAgentsSupported")} />
+                <Stat value={4} label={t("statKinds")} />
+              </>
             )}
-            <Stat value={SUPPORTED_AGENT_COUNT} label={t("statAgents")} />
-            <Stat value={4} label={t("statKinds")} />
           </dl>
         </div>
       </div>
