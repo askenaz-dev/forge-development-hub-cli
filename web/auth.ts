@@ -31,12 +31,13 @@ import NextAuth from "next-auth";
 import Keycloak from "next-auth/providers/keycloak";
 import { customFetch } from "next-auth";
 
-// Cloudflare may Brotli-compress (`content-encoding: br`) the responses from
-// Keycloak. Node 22's undici/DecompressionStream has no brotli support, so it
-// throws "controller[kState].transformAlgorithm is not a function" — which
-// crashes Auth.js's server-side OIDC token exchange and surfaces as a 502 on
-// /api/auth/callback. Force uncompressed responses for every Auth.js → Keycloak
-// fetch so there is nothing to decompress.
+// Cloudflare compresses the IdP responses with `zstd` (verified) — and may
+// also use `br`. Node 22's fetch/undici can't decompress `zstd`, so it throws
+// "controller[kState].transformAlgorithm is not a function", crashing Auth.js's
+// server-side OIDC token exchange and surfacing as a 502 on /api/auth/callback.
+// Force uncompressed responses for the provider's token/jwks/userinfo fetches.
+// (The global-fetch patch below is the broader belt-and-suspenders cover that
+// also catches the discovery fetch, which does not route through customFetch.)
 const noCompressionFetch: typeof fetch = (input, init) => {
   const headers = new Headers(init?.headers);
   headers.set("accept-encoding", "identity");
@@ -51,6 +52,51 @@ const issuer = process.env.AUTH_KEYCLOAK_ISSUER;
 const wellKnown =
   process.env.AUTH_KEYCLOAK_WELLKNOWN ??
   (issuer ? `${issuer}/.well-known/openid-configuration` : undefined);
+
+// Cloudflare zstd/brotli-compresses the IdP's responses, and Node 22's
+// fetch/undici can't decompress `zstd` — it throws
+// "controller[kState].transformAlgorithm is not a function", which crashes
+// BOTH the OIDC discovery (sign-in) and the token/jwks exchange (callback).
+// The provider-level customFetch below only covers the token/jwks path, not
+// discovery, so we also patch the global fetch to force `Accept-Encoding:
+// identity` for every request to the IdP host (Cloudflare honors it and
+// returns the response uncompressed — verified). Scoped to the IdP host so no
+// other server-side fetch is affected.
+const idpHost = (() => {
+  try {
+    return issuer ? new URL(issuer).host : "";
+  } catch {
+    return "";
+  }
+})();
+if (
+  idpHost &&
+  typeof globalThis.fetch === "function" &&
+  !(globalThis as { __idpFetchPatched?: boolean }).__idpFetchPatched
+) {
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    try {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : (input as Request).url;
+      if (url && url.includes(idpHost)) {
+        const headers = new Headers(
+          init?.headers ?? (input instanceof Request ? input.headers : undefined)
+        );
+        headers.set("accept-encoding", "identity");
+        return origFetch(input, { ...init, headers });
+      }
+    } catch {
+      /* fall through to the original fetch */
+    }
+    return origFetch(input, init);
+  }) as typeof fetch;
+  (globalThis as { __idpFetchPatched?: boolean }).__idpFetchPatched = true;
+}
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   trustHost: true,
