@@ -111,9 +111,11 @@ func (s *Server) handleGetSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := strings.TrimRight(s.publicBaseURL(r), "/") + "/api/v1/skills/" + ns + "/" + name
+	compStatus := s.componentScanStatus(comp, vers)
+	latest := vers[0].Version
 	versions := make([]map[string]any, 0, len(vers))
 	for _, v := range vers {
-		versions = append(versions, hubVersionToJSON(base, v))
+		versions = append(versions, hubVersionToJSON(base, v, versionScanStatus(v, latest, compStatus)))
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{
 		"namespace":   ns,
@@ -137,9 +139,11 @@ func (s *Server) handleGetVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := strings.TrimRight(s.publicBaseURL(r), "/") + "/api/v1/skills/" + ns + "/" + name
+	compStatus := s.componentScanStatus(comp, vers)
+	latest := vers[0].Version
 	for _, v := range vers {
 		if v.Version == version {
-			s.writeJSON(w, http.StatusOK, hubVersionToJSON(base, v))
+			s.writeJSON(w, http.StatusOK, hubVersionToJSON(base, v, versionScanStatus(v, latest, compStatus)))
 			return
 		}
 	}
@@ -202,13 +206,15 @@ func (s *Server) hubComponentVersions(kind, name string) (*hubComponent, []resol
 }
 
 // hubVersionToJSON renders a resolvedVersion as the /api/v1 version JSON shape.
-func hubVersionToJSON(base string, v resolvedVersion) map[string]any {
+// scanStatus is the version's real fdh-scan verdict (capability
+// portal-scan-status).
+func hubVersionToJSON(base string, v resolvedVersion, scanStatus string) map[string]any {
 	out := map[string]any{
 		"version":      v.Version,
 		"content_hash": v.ContentHash,
 		"published_at": v.PublishedAt.UTC().Format(time.RFC3339),
 		"published_by": wirePublishedBy,
-		"scan_status":  wireScanStatus,
+		"scan_status":  scanStatus,
 		"skill_md_url": base + "/versions/" + v.Version + "/skill-md",
 	}
 	if v.Signature != "" {

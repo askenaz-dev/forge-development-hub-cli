@@ -14,6 +14,7 @@ import (
 
 	"github.com/forge/fdh/internal/portalapi/auth"
 	"github.com/forge/fdh/pkg/registry"
+	"github.com/forge/fdh/pkg/scan"
 )
 
 // Server is the long-lived API server backed by a `pkg/registry.Registry`.
@@ -31,6 +32,12 @@ type Server struct {
 	metrics    *metricsRegistry
 	validator  tokenValidator // nil when auth is disabled
 	activation *activationRing
+
+	// scanCache memoizes the fdh-scan verdict per component bundle, keyed by
+	// canonical content hash so an unchanged bundle is scanned once across
+	// refreshes and requests (capability portal-scan-status, decision D1).
+	scanMu    sync.RWMutex
+	scanCache map[string]string
 }
 
 type snapshot struct {
@@ -83,6 +90,7 @@ func New(cfg Config, build BuildInfo) (*Server, error) {
 		metrics:    newMetrics(),
 		validator:  validator,
 		activation: newActivationRing(512),
+		scanCache:  make(map[string]string),
 	}, nil
 }
 
@@ -92,8 +100,11 @@ func New(cfg Config, build BuildInfo) (*Server, error) {
 // as the wire endpoints. Components of every kind are included; Skills is the
 // kind=="skill" projection so the /api/v1/skills endpoint stays skill-scoped.
 // namespace is derived from each component's owner_team per the
-// hub-http-registry canonical rule (deriveNamespace).
-func buildHubIndex(hubPath string) (registry.Index, error) {
+// hub-http-registry canonical rule (deriveNamespace). Each entry's scan_status
+// is the real fdh-scan verdict over the component's tip bundle (cached by
+// content hash), so the served catalog reflects security posture, not a
+// sentinel (capability portal-scan-status).
+func (s *Server) buildHubIndex(hubPath string) (registry.Index, error) {
 	cat, err := loadHubCatalog(hubPath)
 	if err != nil {
 		return registry.Index{}, err
@@ -120,7 +131,7 @@ func buildHubIndex(hubPath string) (registry.Index, error) {
 			Tags:          comp.Tags,
 			LatestVersion: latest.Version,
 			LatestHash:    latest.ContentHash,
-			ScanStatus:    wireScanStatus,
+			ScanStatus:    s.scanStatusFor(latest.ContentHash, srcDir),
 		})
 	}
 	for _, e := range idx.Components {
@@ -216,7 +227,7 @@ func (s *Server) Refresh(ctx context.Context) error {
 			s.logger.Warn("hub content sync failed; building from on-disk content", "err", err)
 		}
 	}
-	idx, err := buildHubIndex(s.cfg.HubPath)
+	idx, err := s.buildHubIndex(s.cfg.HubPath)
 	if err != nil {
 		if s.metrics != nil {
 			s.metrics.refreshTotal.WithLabelValues("error").Inc()
@@ -250,6 +261,54 @@ func (s *Server) Refresh(ctx context.Context) error {
 // no read has succeeded yet.
 func (s *Server) Snapshot() *snapshot {
 	return s.snapshot.Load()
+}
+
+// scanStatusFor returns the fdh-scan verdict (pass|warn|fail) for a component
+// bundle at srcDir, memoized by its canonical content hash so an unchanged
+// bundle is scanned at most once across refreshes and requests. A scan that
+// cannot run yields "none" and is NOT cached, so it is retried next time
+// (capability portal-scan-status, decisions D1/D2; scan errors never abort).
+func (s *Server) scanStatusFor(contentHash, srcDir string) string {
+	if contentHash != "" {
+		s.scanMu.RLock()
+		v, ok := s.scanCache[contentHash]
+		s.scanMu.RUnlock()
+		if ok {
+			return v
+		}
+	}
+	st, err := scan.DirStatus(srcDir)
+	if err != nil {
+		s.logger.Warn("scan failed; recording none", "dir", srcDir, "err", err)
+		return scan.StatusNone
+	}
+	if contentHash != "" {
+		s.scanMu.Lock()
+		s.scanCache[contentHash] = st
+		s.scanMu.Unlock()
+	}
+	return st
+}
+
+// componentScanStatus is the verdict for a component's latest (tip) version,
+// scanned from its working-tree source. Older tagged versions are not
+// re-scanned here (assume-latest, per the change's open questions); callers
+// map them to "none".
+func (s *Server) componentScanStatus(comp *hubComponent, vers []resolvedVersion) string {
+	if comp == nil || len(vers) == 0 {
+		return scan.StatusNone
+	}
+	srcDir := filepath.Join(s.cfg.HubPath, filepath.FromSlash(comp.Path))
+	return s.scanStatusFor(vers[0].ContentHash, srcDir)
+}
+
+// versionScanStatus maps a per-version scan_status: the tip version carries the
+// component verdict; older versions are "none" (not re-scanned).
+func versionScanStatus(v resolvedVersion, latest, compStatus string) string {
+	if v.Version == latest {
+		return compStatus
+	}
+	return scan.StatusNone
 }
 
 // --- helpers ---
