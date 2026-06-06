@@ -9,7 +9,13 @@ description: |
   configuring the OIDC discovery URL and client secret via values.yaml +
   a referenced Kubernetes Secret.
 type: application
-version: 0.2.1
+# Keep `version` PINNED. It feeds the `helm.sh/chart` label, which the API
+# StatefulSet stamps onto its volumeClaimTemplates — an immutable field. Bumping
+# it makes an in-place `helm upgrade` fail ("updates to statefulset spec for
+# fields other than 'template' … are forbidden"). Ship template changes (e.g.
+# ingress paths) WITHOUT a version bump. Decoupling this (VCT labels →
+# selectorLabels) needs a one-time orphan-delete + recreate of the StatefulSet.
+version: 0.2.0
 appVersion: "0.1.0"
 keywords:
   - fdh
