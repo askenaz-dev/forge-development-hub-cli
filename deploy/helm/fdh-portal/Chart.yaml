@@ -9,7 +9,7 @@ description: |
   configuring the OIDC discovery URL and client secret via values.yaml +
   a referenced Kubernetes Secret.
 type: application
-version: 0.2.0
+version: 0.2.1
 appVersion: "0.1.0"
 keywords:
   - fdh

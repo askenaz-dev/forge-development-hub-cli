@@ -66,13 +66,6 @@ spec:
                 name: {{ $svcAPI }}
                 port:
                   name: http
-          - path: /docs
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ $svcAPI }}
-                port:
-                  name: http
           - path: /healthz
             pathType: Exact
             backend:

@@ -130,7 +130,7 @@ const docsIndexHTML = `<!doctype html>
         Interactive — fold endpoints, try requests against this server
         directly from the browser.
       </p>
-      <p><a href="/docs/swagger">Open Swagger UI →</a></p>
+      <p><a href="/api/docs/swagger">Open Swagger UI →</a></p>
     </div>
 
     <div class="card">
@@ -139,7 +139,7 @@ const docsIndexHTML = `<!doctype html>
         Reference-style — one long scrollable page, optimized for reading
         the spec end-to-end.
       </p>
-      <p><a href="/docs/redoc">Open Redoc →</a></p>
+      <p><a href="/api/docs/redoc">Open Redoc →</a></p>
     </div>
 
     <div class="card">
@@ -161,14 +161,14 @@ const docsIndexHTML = `<!doctype html>
 
 // handleDocsIndex serves the docs landing page that links to the two UIs.
 func (s *Server) handleDocsIndex(w http.ResponseWriter, r *http.Request) {
-	// Treat exact /docs and /docs/ the same as the index.
+	// Treat exact /api/docs and /api/docs/ the same as the index.
 	switch strings.TrimSuffix(r.URL.Path, "/") {
-	case "/docs":
+	case "/api/docs":
 		// fall through to render the index
-	case "/docs/swagger":
+	case "/api/docs/swagger":
 		s.serveHTML(w, swaggerUIHTML)
 		return
-	case "/docs/redoc":
+	case "/api/docs/redoc":
 		s.serveHTML(w, redocHTML)
 		return
 	default:
