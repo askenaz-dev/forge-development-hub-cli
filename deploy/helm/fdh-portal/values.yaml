@@ -51,6 +51,21 @@ web:
     minReplicas: 2
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
+  # /etc/hosts overrides for the web pods. We pin the IdP host (keycloak.askenaz.dev)
+  # to its Cloudflare edge IPs so the server-side OIDC backchannel (discovery /
+  # token / jwks) never depends on the cluster's intermittently-failing DNS
+  # forward to public resolvers — that flakiness surfaces as NextAuth
+  # `error=Configuration` ("fetch failed") on the callback. Going via Cloudflare
+  # (not the in-cluster service) is deliberate: the keycloak ingress has no TLS
+  # cert of its own, so only Cloudflare presents a publicly-trusted cert for the
+  # https issuer URL. Update these IPs if the zone's Cloudflare IPs ever change.
+  hostAliases:
+    - ip: "104.21.52.50"
+      hostnames:
+        - "keycloak.askenaz.dev"
+    - ip: "172.67.195.145"
+      hostnames:
+        - "keycloak.askenaz.dev"
 
 # Optional: if the GHCR images are private, reference a docker-registry
 # Secret in this namespace. Leave empty when using public images (default).
