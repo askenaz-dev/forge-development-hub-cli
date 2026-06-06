@@ -45,6 +45,18 @@ spec:
                 name: {{ $svcAPI }}
                 port:
                   name: http
+          # NextAuth (Auth.js) lives on the WEB app at /api/auth/*. It must be
+          # carved out BEFORE the broad /api → API rule, or the API swallows
+          # sign-in/callback/csrf and returns 404 (breaking login). nginx uses
+          # longest-prefix matching, so /api/auth wins over /api for these paths.
+          # The Go API only owns /api/v1/* and /api/docs, so this steals nothing.
+          - path: /api/auth
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $svcWeb }}
+                port:
+                  name: http
           - path: /api
             pathType: Prefix
             backend:
