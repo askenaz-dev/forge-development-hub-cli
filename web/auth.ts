@@ -81,14 +81,21 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, account, profile }) {
-      // Persist the IdP access token + groups on first sign-in so we can
-      // forward to the Go API on outbound calls.
-      if (account) {
-        token.accessToken = account.access_token;
-        token.idToken = account.id_token;
-        token.expiresAt = account.expires_at;
-      }
+    async jwt({ token, profile }) {
+      // IMPORTANT: do NOT persist the IdP access_token / id_token in the
+      // session JWT. Keycloak's tokens are ~1–2 KB each; stored together and
+      // JWE-encrypted they push the session cookie past 4 KB, so Auth.js splits
+      // it across multiple `__Secure-authjs.session-token.N` chunks. The OIDC
+      // callback response then carries several multi-KB `Set-Cookie` headers
+      // (plus the sign-in cookies being cleared) — nginx-ingress buffers them
+      // with a raised proxy-buffer-size, but Cloudflare still refuses to relay
+      // that oversized response header block and returns a 502 to the browser,
+      // even though the app handled the callback fine. Keeping only small,
+      // display-oriented claims here keeps the cookie to a single small chunk.
+      //
+      // When the portal needs to call the Go API on the user's behalf, mint /
+      // refresh a token server-side (the API validates against the same JWKS)
+      // instead of parking the IdP tokens in the browser cookie.
       if (profile) {
         // Keycloak puts group memberships under `groups` (or `realm_access.roles`).
         // Capture whatever's there for portal-side role mapping.
@@ -109,7 +116,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         groups: token.groups ?? [],
         preferredUsername: token.preferredUsername,
       };
-      session.accessToken = token.accessToken;
       return session;
     },
   },
