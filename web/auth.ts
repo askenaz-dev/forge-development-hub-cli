@@ -47,7 +47,13 @@ patchGlobalFetch();
 const noCompressionFetch: typeof fetch = (input, init) => {
   const headers = new Headers(init?.headers);
   headers.set("accept-encoding", "identity");
-  return fetch(input, { ...init, headers });
+  // `cache: "no-store"` keeps these OIDC requests out of Next.js's fetch
+  // cache. That cache revalidates GET responses in the background with its
+  // own undici call that ignores the identity header above, pulls a `zstd`
+  // body from Cloudflare, and crashes on decompression
+  // ("transformAlgorithm is not a function"). Token/jwks/discovery responses
+  // must never be cached anyway, so opting out is correct on every axis.
+  return fetch(input, { ...init, headers, cache: "no-store" });
 };
 
 const issuer = process.env.AUTH_KEYCLOAK_ISSUER;
