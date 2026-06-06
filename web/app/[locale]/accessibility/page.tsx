@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getTranslations } from "next-intl/server";
+import { getTranslations, setRequestLocale } from "next-intl/server";
 import { ExternalLink } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -8,7 +8,13 @@ import { Card, CardContent } from "@/components/ui/card";
  *
  * Linked from the global footer. Server-rendered and fully localized.
  */
-export default async function AccessibilityPage() {
+export default async function AccessibilityPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  setRequestLocale(locale);
   const t = await getTranslations("accessibility");
 
   const features = [t("feat1"), t("feat2"), t("feat3"), t("feat4"), t("feat5")];
