@@ -107,7 +107,16 @@ ingress:
     #   kubectl create secret tls cloudflare-origin-tls \
     #     --cert=origin.pem --key=origin.key --namespace fdh
     secretName: "cloudflare-origin-tls"
-  annotations: {}
+  annotations:
+    # NextAuth (Auth.js) stores the OIDC id_token + access_token inside the JWT
+    # session cookie, so the /api/auth/callback response sets several multi-KB
+    # `Set-Cookie` headers. nginx-ingress's default proxy_buffer_size (4k) can't
+    # buffer them and 502s the callback with "upstream sent too big header while
+    # reading response header from upstream" — the request never reaches the app
+    # (so the web pod logs nothing). Bigger buffers let the session cookie
+    # through and the OIDC callback completes.
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
     # If using cert-manager + ClusterIssuer instead of an Origin Cert:
     # cert-manager.io/cluster-issuer: "letsencrypt-cloudflare"
 
