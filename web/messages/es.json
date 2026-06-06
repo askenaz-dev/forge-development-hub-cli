@@ -11,7 +11,7 @@
     "closeMenu": "Cerrar menú"
   },
   "landing": {
-    "eyebrow": "El hub para agentes de IA",
+    "eyebrow": "La forja de harnesses para agentes de IA",
     "tagline": "Fórjalo una vez. Úsalo en cada agente.",
     "subhead": "Forge Development Hub centraliza, gobierna y distribuye skills, reglas, agentes y hooks para Claude Code, GitHub Copilot, OpenAI Codex y OpenCode.",
     "ctaInstall": "Instalar el CLI",
