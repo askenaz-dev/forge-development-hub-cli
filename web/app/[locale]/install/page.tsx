@@ -28,28 +28,39 @@ const PKG_HOST =
 const NPM_PKG = "@askenaz-dev/fdh";
 const FALLBACK_VERSION = "v0.2.0";
 
+// In-memory, per-worker cache of the resolved tag (1h TTL). We deliberately
+// do NOT use Next.js's fetch cache (`next: { revalidate }`): that cache
+// revalidates GET responses in the background with its own undici call which
+// ignores the `accept-encoding: identity` header below, pulls the `zstd` body
+// GitHub serves, and crashes Node 22 on decompression
+// ("transformAlgorithm is not a function"). Owning the request with
+// `cache: "no-store"` makes the identity header stick; this tiny module-level
+// cache provides the freshness window without the broken background refetch.
+const VERSION_TTL_MS = 3_600_000;
+let cachedTag: { value: string; at: number } | null = null;
+
 async function resolveVersionTag(): Promise<string> {
   const override = process.env.NEXT_PUBLIC_FDH_VERSION;
   if (override) return override.startsWith("v") ? override : `v${override}`;
+  const now = Date.now();
+  if (cachedTag && now - cachedTag.at < VERSION_TTL_MS) return cachedTag.value;
   try {
     const res = await fetch(
       `https://api.github.com/repos/${REPO}/releases/latest`,
       {
-        next: { revalidate: 3600 },
+        cache: "no-store",
         headers: {
           accept: "application/vnd.github+json",
-          // GitHub's API serves `zstd`/`br`-compressed responses, which Node
-          // 22's fetch/undici can't decompress — it throws
-          // "controller[kState].transformAlgorithm is not a function" while
-          // Next.js reads the body for its ISR cache, polluting the logs and
-          // forcing the FALLBACK_VERSION. Ask for an uncompressed response.
           "accept-encoding": "identity",
         },
       }
     );
     if (res.ok) {
       const data = (await res.json()) as { tag_name?: string };
-      if (data.tag_name) return data.tag_name;
+      if (data.tag_name) {
+        cachedTag = { value: data.tag_name, at: now };
+        return data.tag_name;
+      }
     }
   } catch {
     // network/ratelimit — fall through to the pinned fallback
