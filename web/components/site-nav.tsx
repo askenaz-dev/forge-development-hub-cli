@@ -1,10 +1,15 @@
 import Link from "next/link";
 import { Flame } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import { auth } from "@/auth";
+import { signOutAction } from "@/app/auth-actions";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { MobileNav } from "@/components/mobile-nav";
+import { UserMenu } from "@/components/user-menu";
+
+const ADMIN_GROUP = "fdh-admins";
 
 /**
  * SiteNav is the global navigation header used by every page.
@@ -20,6 +25,11 @@ import { MobileNav } from "@/components/mobile-nav";
  */
 export async function SiteNav() {
   const t = await getTranslations("nav");
+  const session = await auth();
+  const user = session?.user;
+  const displayName =
+    user?.name || user?.preferredUsername || user?.email || t("account");
+  const isAdmin = (user?.groups ?? []).includes(ADMIN_GROUP);
 
   const links = [
     { href: "/skills", label: t("skills") },
@@ -52,9 +62,18 @@ export async function SiteNav() {
           <span className="mx-2 h-6 w-px bg-border" />
           <LocaleSwitcher />
           <ThemeToggle />
-          <Button asChild variant="default" size="sm" className="ml-1">
-            <Link href="/auth/signin">{t("signIn")}</Link>
-          </Button>
+          {user ? (
+            <UserMenu
+              name={displayName}
+              email={user.email ?? undefined}
+              isAdmin={isAdmin}
+              signOutAction={signOutAction}
+            />
+          ) : (
+            <Button asChild variant="default" size="sm" className="ml-1">
+              <Link href="/auth/signin">{t("signIn")}</Link>
+            </Button>
+          )}
         </nav>
 
         {/* Mobile/tablet nav (below lg) */}
@@ -63,6 +82,14 @@ export async function SiteNav() {
           signInLabel={t("signIn")}
           menuLabel={t("openMenu")}
           closeLabel={t("closeMenu")}
+          authed={Boolean(user)}
+          displayName={displayName}
+          isAdmin={isAdmin}
+          adminLabel={t("admin")}
+          accountLabel={t("account")}
+          signOutLabel={t("signOut")}
+          signedInAsLabel={t("signedInAs")}
+          signOutAction={signOutAction}
           controls={
             <>
               <LocaleSwitcher />
