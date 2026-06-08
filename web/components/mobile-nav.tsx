@@ -34,12 +34,29 @@ export function MobileNav({
   signInLabel,
   menuLabel,
   closeLabel,
+  authed = false,
+  displayName,
+  isAdmin = false,
+  adminLabel,
+  accountLabel,
+  signOutLabel,
+  signedInAsLabel,
+  signOutAction,
   controls,
 }: {
   links: NavLink[];
   signInLabel: string;
   menuLabel: string;
   closeLabel: string;
+  /** Whether a session exists; drives the signed-in vs signed-out footer. */
+  authed?: boolean;
+  displayName?: string;
+  isAdmin?: boolean;
+  adminLabel?: string;
+  accountLabel?: string;
+  signOutLabel?: string;
+  signedInAsLabel?: string;
+  signOutAction?: () => Promise<void>;
   /** theme toggle + locale switcher, rendered in the panel footer. */
   controls: React.ReactNode;
 }) {
@@ -162,9 +179,45 @@ export function MobileNav({
             </nav>
 
             <div className="mt-4 border-t pt-4">
-              <Button asChild className="w-full">
-                <Link href="/auth/signin">{signInLabel}</Link>
-              </Button>
+              {authed ? (
+                <div className="flex flex-col gap-1">
+                  <div className="px-3 pb-1">
+                    <p className="text-xs text-muted-foreground">
+                      {signedInAsLabel}
+                    </p>
+                    <p className="truncate text-sm font-medium">{displayName}</p>
+                  </div>
+                  {isAdmin && adminLabel ? (
+                    <Link
+                      href="/admin"
+                      className="rounded-md px-3 py-2.5 text-base text-ember transition-colors hover:bg-accent"
+                    >
+                      {adminLabel}
+                    </Link>
+                  ) : null}
+                  <Link
+                    href="/profile"
+                    className="rounded-md px-3 py-2.5 text-base transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    {accountLabel}
+                  </Link>
+                  {signOutAction ? (
+                    <form action={signOutAction}>
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        className="mt-1 w-full"
+                      >
+                        {signOutLabel}
+                      </Button>
+                    </form>
+                  ) : null}
+                </div>
+              ) : (
+                <Button asChild className="w-full">
+                  <Link href="/auth/signin">{signInLabel}</Link>
+                </Button>
+              )}
             </div>
 
             <div className="mt-auto flex items-center justify-between border-t pt-4">

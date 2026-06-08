@@ -8,6 +8,10 @@
     "install": "Instalar CLI",
     "getStarted": "Empezar",
     "signIn": "Iniciar sesión",
+    "signOut": "Cerrar sesión",
+    "account": "Cuenta",
+    "admin": "Admin",
+    "signedInAs": "Sesión iniciada como",
     "openMenu": "Abrir menú",
     "closeMenu": "Cerrar menú"
   },
