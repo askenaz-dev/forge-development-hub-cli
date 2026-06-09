@@ -23,6 +23,7 @@ import (
 type fakeStore struct {
 	mu        sync.Mutex
 	events    []telemetry.Event
+	claims    []fakeClaim // separate identity↔telemetry link (never merged into events)
 	available bool
 	degraded  bool // when true, reads return ErrStoreUnavailable
 }
@@ -61,6 +62,162 @@ func (f *fakeStore) Aggregate(ctx context.Context, retention time.Duration) erro
 		return telemetry.ErrStoreUnavailable
 	}
 	return nil
+}
+
+// --- Stage-2 analytics/feedback/activity reads on the fake store ---
+
+func (f *fakeStore) SummaryByEvent(ctx context.Context) (int64, []telemetry.EventCount, time.Time, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.degraded {
+		return 0, nil, time.Time{}, telemetry.ErrStoreUnavailable
+	}
+	counts := map[string]int64{}
+	var since time.Time
+	for _, e := range f.events {
+		counts[e.Event]++
+		if since.IsZero() || (!e.Timestamp.IsZero() && e.Timestamp.Before(since)) {
+			since = e.Timestamp
+		}
+	}
+	var total int64
+	out := make([]telemetry.EventCount, 0, len(counts))
+	for ev, c := range counts {
+		total += c
+		out = append(out, telemetry.EventCount{Event: ev, Count: c})
+	}
+	return total, out, since, nil
+}
+
+func (f *fakeStore) TopComponents(ctx context.Context, metric string, limit int) ([]telemetry.ComponentCount, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.degraded {
+		return nil, telemetry.ErrStoreUnavailable
+	}
+	type key struct{ kind, ns, name string }
+	agg := map[key]int64{}
+	for _, e := range f.events {
+		if e.Event != metric {
+			continue
+		}
+		agg[key{e.Kind, e.Namespace, e.Name}]++
+	}
+	out := make([]telemetry.ComponentCount, 0, len(agg))
+	for k, c := range agg {
+		out = append(out, telemetry.ComponentCount{Kind: k.kind, Namespace: k.ns, Name: k.name, Count: c})
+	}
+	return out, nil
+}
+
+func (f *fakeStore) Trends(ctx context.Context, event string, days int) ([]telemetry.TrendPoint, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.degraded {
+		return nil, telemetry.ErrStoreUnavailable
+	}
+	byDay := map[string]int64{}
+	for _, e := range f.events {
+		if e.Event != event {
+			continue
+		}
+		byDay[e.Timestamp.UTC().Format("2006-01-02")]++
+	}
+	out := make([]telemetry.TrendPoint, 0, len(byDay))
+	for d, c := range byDay {
+		out = append(out, telemetry.TrendPoint{Date: d, Count: c})
+	}
+	return out, nil
+}
+
+func (f *fakeStore) Funnel(ctx context.Context) ([]telemetry.FunnelStep, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.degraded {
+		return nil, telemetry.ErrStoreUnavailable
+	}
+	byStep := map[string]int64{}
+	for _, e := range f.events {
+		if e.Event != "activation" {
+			continue
+		}
+		byStep[e.Step]++
+	}
+	out := make([]telemetry.FunnelStep, 0, len(byStep))
+	for st, c := range byStep {
+		out = append(out, telemetry.FunnelStep{Step: st, Count: c})
+	}
+	return out, nil
+}
+
+func (f *fakeStore) EventCount(ctx context.Context) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.degraded {
+		return 0, telemetry.ErrStoreUnavailable
+	}
+	return int64(len(f.events)), nil
+}
+
+func (f *fakeStore) ListFeedback(ctx context.Context, limit, offset int) ([]telemetry.Event, int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.degraded {
+		return nil, 0, telemetry.ErrStoreUnavailable
+	}
+	var fb []telemetry.Event
+	for i := len(f.events) - 1; i >= 0; i-- {
+		if f.events[i].Event == "feedback" {
+			fb = append(fb, f.events[i])
+		}
+	}
+	total := len(fb)
+	if offset > total {
+		offset = total
+	}
+	end := offset + limit
+	if limit <= 0 || end > total {
+		end = total
+	}
+	return fb[offset:end], total, nil
+}
+
+// claims is the fake's separate identity↔telemetry link, mirroring the real
+// install_claims table: it is NEVER merged into f.events (which stays PII-free).
+type fakeClaim struct{ installID, user string }
+
+func (f *fakeStore) Claim(ctx context.Context, installID, userEmail string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.degraded {
+		return telemetry.ErrStoreUnavailable
+	}
+	f.claims = append(f.claims, fakeClaim{installID: installID, user: userEmail})
+	return nil
+}
+
+func (f *fakeStore) ActivityFor(ctx context.Context, userEmail string, limit int) ([]telemetry.ClaimedInstall, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.degraded {
+		return nil, telemetry.ErrStoreUnavailable
+	}
+	claimed := map[string]bool{}
+	for _, c := range f.claims {
+		if c.user == userEmail {
+			claimed[c.installID] = true
+		}
+	}
+	var out []telemetry.ClaimedInstall
+	for i := len(f.events) - 1; i >= 0; i-- {
+		e := f.events[i]
+		if e.Event == "install" && claimed[e.InstallID] {
+			out = append(out, telemetry.ClaimedInstall{
+				Kind: e.Kind, Name: e.Name, Version: e.Version, Timestamp: e.Timestamp,
+			})
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeStore) Available() bool { return f.available }

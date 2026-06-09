@@ -11,7 +11,13 @@ import {
 import { resolvePortalRole } from "@/lib/roles";
 import { resolveAvatar } from "@/lib/avatar";
 import { getServiceToken } from "@/lib/bff";
-import { getContributions, type Contribution } from "@/lib/api";
+import {
+  getContributions,
+  getActivity,
+  type Contribution,
+  type ClaimedInstall,
+} from "@/lib/api";
+import { ClaimControl } from "./claim-control";
 
 /**
  * /profile — auth-gated identity + recognition surface (portal-admin-surface
@@ -60,19 +66,75 @@ export default async function ProfilePage({
   // provider is `local` or no email is present.
   const avatar = resolveAvatar(name, email);
 
-  // 4.3 — contributions, derived from Git authorship by THIS user's email only.
-  // A failure here must not break the page: degrade to an error note.
+  // Activity feed (capability hub-usage-telemetry, design D5, task 8) — a
+  // GitHub-style UNIFIED chronological timeline that merges TWO independent
+  // sources, each row labeled by source:
+  //   - "contribution": components THIS user Git-authored in forge-development-hub,
+  //     matched by email (4.3, identity-bound, DERIVED — no telemetry).
+  //   - "install": installs this user VOLUNTARILY claimed via `fdh telemetry
+  //     claim` (D5). Empty until the user pastes a claim code below; NEVER
+  //     derived by reversing the pseudonymous install_id.
+  // The two sources fail independently and non-fatally: a contributions hiccup
+  // shows a note but the installs still render, and vice-versa. A degraded
+  // telemetry store yields a retry banner for the installs half only.
   let contributions: Contribution[] = [];
   let contributionsErrored = false;
+  let claimedInstalls: ClaimedInstall[] = [];
+  let activityState: "ok" | "store_unavailable" | "error" = "ok";
   try {
     const serviceToken = await getServiceToken();
-    const res = await getContributions(email ?? "", { serviceToken });
-    contributions = res.contributions;
+    // Both reads share the one minted token (bff.ts caches it anyway). We always
+    // pass THIS session's own email — never an arbitrary one (privacy invariant).
+    const [contribRes, activityRes] = await Promise.allSettled([
+      getContributions(email ?? "", { serviceToken }),
+      getActivity(email ?? "", { serviceToken }),
+    ]);
+    // Contributions: a failure degrades to a note but never breaks the page or
+    // the installs half.
+    if (contribRes.status === "fulfilled") {
+      contributions = contribRes.value.contributions;
+    } else {
+      contributionsErrored = true;
+    }
+    // Claimed installs: distinguish the typed degraded-store retry (ok:false)
+    // from a hard failure (rejected promise).
+    if (activityRes.status === "fulfilled") {
+      if (activityRes.value.ok) {
+        claimedInstalls = activityRes.value.data.installs;
+      } else {
+        activityState = "store_unavailable";
+      }
+    } else {
+      activityState = "error";
+    }
   } catch {
-    // Never surface the underlying error (it may carry infra detail); the API
-    // gate / BFF mint failing here is non-fatal to identity + groups.
+    // Minting the service token itself failed — non-fatal to identity + groups.
+    // Degrade BOTH halves; never surface the underlying error (infra detail).
     contributionsErrored = true;
+    activityState = "error";
   }
+
+  // Merge both sources into ONE chronological feed, newest first. Each entry
+  // carries its `source` so the row can render a Contribution / Install badge.
+  // Unparseable timestamps sort last (sortKey 0) but still render.
+  const feed: ActivityEntry[] = [
+    ...contributions.map<ActivityEntry>((c) => ({
+      source: "contribution",
+      kind: c.kind,
+      name: c.name,
+      ts: c.last_commit,
+      sortKey: toEpoch(c.last_commit),
+      commitCount: c.commit_count,
+    })),
+    ...claimedInstalls.map<ActivityEntry>((i) => ({
+      source: "install",
+      kind: i.kind,
+      name: i.name,
+      ts: i.ts,
+      sortKey: toEpoch(i.ts),
+      version: i.version,
+    })),
+  ].sort((a, b) => b.sortKey - a.sortKey);
 
   return (
     <div className="container py-12">
@@ -143,57 +205,143 @@ export default async function ProfilePage({
         </Card>
       </div>
 
-      {/* Your contributions (DERIVED, read-only, email-match heuristic) */}
+      {/* Activity — a GitHub-style UNIFIED chronological feed (design D5, task
+          8). It merges TWO independent sources, each row labeled by source:
+          Git contributions (DERIVED, identity-bound) and voluntarily-claimed
+          installs (appear ONLY after the user pastes a `fdh telemetry claim`
+          code; the platform never reverses a pseudonymous install_id). The two
+          halves degrade independently and non-fatally. */}
       <Card className="mt-4">
         <CardHeader>
-          <CardTitle className="text-base">
-            {t("contributionsHeading")}
-          </CardTitle>
-          <CardDescription>{t("contributionsDescription")}</CardDescription>
+          <CardTitle className="text-base">{t("activityHeading")}</CardTitle>
+          <CardDescription>{t("activityDescription")}</CardDescription>
         </CardHeader>
-        <CardContent>
-          {contributionsErrored ? (
+        <CardContent className="space-y-5">
+          {/* Per-source degradation notes. Each renders inline ABOVE the merged
+              feed so a hiccup in one source never hides the other. */}
+          {contributionsErrored && (
             <p className="text-sm text-muted-foreground">
               {t("contributionsError")}
             </p>
-          ) : contributions.length === 0 ? (
+          )}
+          {activityState === "store_unavailable" && (
+            <p
+              role="status"
+              className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-700 dark:text-amber-400"
+            >
+              {t("activityStoreUnavailable")}
+            </p>
+          )}
+          {activityState === "error" && (
+            <p className="text-sm text-muted-foreground">{t("activityError")}</p>
+          )}
+
+          {feed.length === 0 ? (
+            // Both sources empty (and neither errored, or the notes above already
+            // explained the gap): a single, friendly empty state.
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">
-                {t("contributionsEmpty", { email: email ?? "—" })}
+                {contributionsErrored || activityState !== "ok"
+                  ? t("activityFeedEmpty")
+                  : t("activityEmpty")}
               </p>
-              <p className="text-xs text-muted-foreground">
-                {t("contributionsEmptyHint")}
-              </p>
+              {!contributionsErrored && activityState === "ok" && (
+                <p className="text-xs text-muted-foreground">
+                  {t("contributionsEmptyHint")}
+                </p>
+              )}
             </div>
           ) : (
             <ul className="divide-y rounded-md border">
-              {contributions.map((c) => (
+              {feed.map((e, idx) => (
                 <li
-                  key={`${c.kind}/${c.name}`}
+                  key={`${e.source}/${e.kind}/${e.name}/${e.ts}/${idx}`}
                   className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-mono text-xs uppercase text-muted-foreground">
-                      {c.kind}
+                    {/* Source badge — the GitHub-style "what kind of event". */}
+                    <span
+                      className={
+                        e.source === "contribution"
+                          ? "inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                          : "inline-flex items-center rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400"
+                      }
+                    >
+                      {e.source === "contribution"
+                        ? t("activitySourceContribution")
+                        : t("activitySourceInstall")}
                     </span>
-                    <span className="font-mono text-sm">{c.name}</span>
+                    <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-mono text-xs uppercase text-muted-foreground">
+                      {e.kind}
+                    </span>
+                    <span className="font-mono text-sm">{e.name}</span>
+                    {e.source === "install" && e.version ? (
+                      <span className="font-mono text-xs text-muted-foreground">
+                        v{e.version}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span>
-                      {t("contributionsCommits", { count: c.commit_count })}
+                      {e.source === "contribution"
+                        ? t("activityContributionDetail", {
+                            count: e.commitCount ?? 0,
+                          })
+                        : t("activityInstallDetail")}
                     </span>
                     <span title={t("contributionsLastCommit")}>
-                      {formatCommitDate(c.last_commit, locale)}
+                      {formatCommitDate(e.ts, locale)}
                     </span>
                   </div>
                 </li>
               ))}
             </ul>
           )}
+
+          {/* The voluntary claim control. Binds to THIS session's email. */}
+          <div className="border-t pt-4">
+            <ClaimControl
+              labels={{
+                inputLabel: t("claimInputLabel"),
+                placeholder: t("claimPlaceholder"),
+                button: t("claimButton"),
+                pending: t("claimPending"),
+                success: t("claimSuccess"),
+                storeUnavailable: t("claimStoreUnavailable"),
+                failureTemplate: t("claimFailure", { detail: "{detail}" }),
+                hint: t("claimHint"),
+              }}
+            />
+          </div>
         </CardContent>
       </Card>
     </div>
   );
+}
+
+/**
+ * One entry in the unified profile activity feed (design D5). It is the merge
+ * of two independent sources — Git `contribution`s (identity-bound, DERIVED) and
+ * voluntarily-claimed `install`s — flattened to a common shape so they render in
+ * one chronological list, each row labeled by `source`. `sortKey` is the epoch
+ * ms of `ts` (0 when unparseable) used purely for newest-first ordering.
+ */
+interface ActivityEntry {
+  source: "contribution" | "install";
+  kind: string;
+  name: string;
+  ts: string;
+  sortKey: number;
+  /** Contributions only: number of commits matched. */
+  commitCount?: number;
+  /** Installs only: the claimed version (may be empty). */
+  version?: string;
+}
+
+/** Epoch-ms of an RFC3339 timestamp, or 0 when unparseable (sorts last). */
+function toEpoch(value: string): number {
+  const t = Date.parse(value);
+  return Number.isNaN(t) ? 0 : t;
 }
 
 function Row({ label, value }: { label: string; value: string }) {

@@ -37,7 +37,10 @@ func (s *Server) withRequestLogging(next http.Handler) http.Handler {
 	})
 }
 
-// withMetrics observes request duration and in-flight count for Prometheus.
+// withMetrics observes request duration and in-flight count for Prometheus and
+// folds the request into the first-party observability stats (design D7) so the
+// admin observability surface has uptime/error-rate/latency without an external
+// Prometheus query source.
 func (s *Server) withMetrics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.metrics == nil {
@@ -49,7 +52,9 @@ func (s *Server) withMetrics(next http.Handler) http.Handler {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		s.metrics.observeRequest(routeLabel(r.URL.Path), r.Method, rec.status, time.Since(start))
+		dur := time.Since(start)
+		s.metrics.observeRequest(routeLabel(r.URL.Path), r.Method, rec.status, dur)
+		s.obs.record(rec.status, float64(dur.Microseconds())/1000.0)
 	})
 }
 

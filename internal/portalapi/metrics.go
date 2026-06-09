@@ -20,6 +20,22 @@ type metricsRegistry struct {
 	refreshTotal      *prometheus.CounterVec
 	refreshDuration   prometheus.Histogram
 	registryCacheSize prometheus.Gauge
+
+	// --- Business / telemetry metrics (capability hub-usage-telemetry, task
+	// 6.1). These feed both /metrics (scraped by the existing ServiceMonitor)
+	// and the first-party admin observability surface. They carry ONLY coarse,
+	// non-identifying labels — never an install_id or any identity.
+
+	// telemetryEventsTotal counts ingested telemetry events by event type
+	// (install|download|resolve|activation|feedback) and result (accepted|
+	// dropped|rejected) — the ingest health signal.
+	telemetryEventsTotal *prometheus.CounterVec
+	// componentEventsTotal counts per-component install/download/resolve events
+	// by (event, kind, name). Bounded cardinality: the catalog is small and the
+	// labels are catalog identifiers, never user identity.
+	componentEventsTotal *prometheus.CounterVec
+	// telemetryStoreUp reflects store health (1 available, 0 degraded).
+	telemetryStoreUp prometheus.Gauge
 }
 
 func newMetrics() *metricsRegistry {
@@ -57,9 +73,28 @@ func newMetrics() *metricsRegistry {
 		Help:      "Number of skills in the in-memory snapshot.",
 	})
 
+	telemetryEventsTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "fdh_portal_api",
+		Name:      "telemetry_events_total",
+		Help:      "Telemetry ingest events, labeled by event type and result.",
+	}, []string{"event", "result"})
+
+	componentEventsTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "fdh_portal_api",
+		Name:      "component_events_total",
+		Help:      "Per-component install/download/resolve events (no identity labels).",
+	}, []string{"event", "kind", "name"})
+
+	telemetryStoreUp := prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "fdh_portal_api",
+		Name:      "telemetry_store_up",
+		Help:      "Telemetry store health: 1 when a live database is reachable, else 0.",
+	})
+
 	reg.MustRegister(
 		requestDuration, requestsInFlight,
 		refreshTotal, refreshDuration, registryCacheSize,
+		telemetryEventsTotal, componentEventsTotal, telemetryStoreUp,
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
@@ -67,8 +102,49 @@ func newMetrics() *metricsRegistry {
 	return &metricsRegistry{
 		reg: reg, requestDuration: requestDuration, requestsInFlight: requestsInFlight,
 		refreshTotal: refreshTotal, refreshDuration: refreshDuration,
-		registryCacheSize: registryCacheSize,
+		registryCacheSize:    registryCacheSize,
+		telemetryEventsTotal: telemetryEventsTotal,
+		componentEventsTotal: componentEventsTotal,
+		telemetryStoreUp:     telemetryStoreUp,
 	}
+}
+
+// recordIngest updates the business metrics for one ingested telemetry event.
+// result is "accepted" | "dropped" | "rejected". Component-scoped events
+// (install/download/resolve) also bump the per-component counter. Labels are
+// coarse catalog identifiers only — NEVER an install_id or identity (design D4).
+func (m *metricsRegistry) recordIngest(event, kind, name, result string) {
+	if m == nil {
+		return
+	}
+	if event == "" {
+		event = "unknown"
+	}
+	m.telemetryEventsTotal.WithLabelValues(event, result).Inc()
+	if result == "accepted" {
+		switch event {
+		case "install", "download", "resolve":
+			if kind == "" {
+				kind = "unknown"
+			}
+			if name == "" {
+				name = "unknown"
+			}
+			m.componentEventsTotal.WithLabelValues(event, kind, name).Inc()
+		}
+	}
+}
+
+// setStoreUp reflects the telemetry store's health on the gauge.
+func (m *metricsRegistry) setStoreUp(up bool) {
+	if m == nil {
+		return
+	}
+	if up {
+		m.telemetryStoreUp.Set(1)
+		return
+	}
+	m.telemetryStoreUp.Set(0)
 }
 
 // handler returns the http.Handler that exposes /metrics for Prometheus.

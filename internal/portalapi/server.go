@@ -33,6 +33,15 @@ type Server struct {
 	metrics   *metricsRegistry
 	validator tokenValidator // nil when auth is disabled
 
+	// startedAt is the process start time, used to report uptime on the admin
+	// observability surface (capability hub-usage-telemetry, task 6.2).
+	startedAt time.Time
+
+	// obs tracks first-party request stats (totals, errors, a small latency
+	// reservoir) feeding the observability endpoint WITHOUT a hard Prometheus
+	// query dependency (design D7). It is updated by the metrics middleware.
+	obs *obsStats
+
 	// telemetry is the persistent usage-telemetry store (capability
 	// hub-usage-telemetry). It is OPTIONAL by contract: opened non-fatally in
 	// New() and always non-nil (a degraded noop when the DSN is empty or
@@ -118,18 +127,23 @@ func New(cfg Config, build BuildInfo) (*Server, error) {
 		store, _ = telemetry.Open(context.Background(), "", slog.Default())
 	}
 
-	return &Server{
+	srv := &Server{
 		cfg:       cfg,
 		build:     build,
 		logger:    slog.Default(),
 		metrics:   newMetrics(),
 		validator: validator,
 		telemetry: store,
+		startedAt: time.Now().UTC(),
+		obs:       newObsStats(),
 		// 600 events / minute / client IP: generous for legitimate batched CLI
 		// emit, tight enough to blunt anonymous abuse.
 		ingestLimiter: newIngestLimiter(time.Minute, 600),
 		scanCache:     make(map[string]string),
-	}, nil
+	}
+	// Seed the store-health gauge from the opened store's availability.
+	srv.metrics.setStoreUp(store.Available())
+	return srv, nil
 }
 
 // buildHubIndex builds the in-memory catalog snapshot from the real hub
@@ -215,6 +229,21 @@ func (s *Server) Handler() http.Handler {
 	// /api/v1/admin/activation; the web's server-only BFF calls it with the
 	// Keycloak client-credentials service token for the logged-in user's email.
 	mux.HandleFunc("GET /api/v1/admin/contributions", s.handleGetContributions)
+
+	// --- Stage-2 admin reads (capability hub-usage-telemetry). ALL admin-gated
+	// exactly like /api/v1/admin/activation; reached from the web ONLY via the
+	// BFF service credential (never a forwarded user bearer). Aggregates only,
+	// except the explicit voluntary install-claim/activity surface (design D5).
+	mux.HandleFunc("GET /api/v1/admin/analytics/summary", s.handleGetAnalyticsSummary)
+	mux.HandleFunc("GET /api/v1/admin/analytics/top", s.handleGetAnalyticsTop)
+	mux.HandleFunc("GET /api/v1/admin/analytics/trends", s.handleGetAnalyticsTrends)
+	mux.HandleFunc("GET /api/v1/admin/analytics/funnel", s.handleGetAnalyticsFunnel)
+	mux.HandleFunc("GET /api/v1/admin/observability", s.handleGetObservability)
+	mux.HandleFunc("GET /api/v1/admin/feedback", s.handleGetFeedback)
+	mux.HandleFunc("GET /api/v1/admin/feedback/summary", s.handleGetFeedbackSummary)
+	// Voluntary install claim (the ONE explicit identity↔telemetry link, D5).
+	mux.HandleFunc("POST /api/v1/admin/activity/claim", s.handlePostActivityClaim)
+	mux.HandleFunc("GET /api/v1/admin/activity", s.handleGetActivity)
 
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPI)
 	// API documentation UIs, namespaced under /api so the bare /docs path

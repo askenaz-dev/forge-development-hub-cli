@@ -165,9 +165,19 @@ DO UPDATE SET count = EXCLUDED.count`
 
 	// Retention prune: drop raw events past the window. Aggregates above were
 	// recomputed first this same transaction, so their contribution survives.
+	//
+	// Floor the cutoff to the start of its UTC day so a calendar day is either
+	// fully retained or fully pruned — never half-deleted. A half-pruned day
+	// would still emit a GROUP BY row on the next pass and the full-recompute
+	// upsert (DO UPDATE SET count = EXCLUDED.count) would overwrite the correct
+	// rollup with a count over the shrunken window, dragging the long-lived
+	// aggregate down. Flooring keeps the prune and the recompute consistent: a
+	// day is aggregated at full count on the last pass before it is pruned, then
+	// never re-aggregated over a partial window.
 	if retention > 0 {
 		cutoff := time.Now().UTC().Add(-retention)
-		if _, err := tx.Exec(ctx, `DELETE FROM events WHERE ts < $1`, cutoff); err != nil {
+		cutoffDay := time.Date(cutoff.Year(), cutoff.Month(), cutoff.Day(), 0, 0, 0, 0, time.UTC)
+		if _, err := tx.Exec(ctx, `DELETE FROM events WHERE ts < $1`, cutoffDay); err != nil {
 			return fmt.Errorf("telemetry retention prune: %w", err)
 		}
 	}
@@ -176,6 +186,298 @@ DO UPDATE SET count = EXCLUDED.count`
 		return fmt.Errorf("telemetry aggregate commit: %w", err)
 	}
 	return nil
+}
+
+// --- Stage-2 admin analytics reads (aggregates only, no identity join) ---
+
+// SummaryByEvent returns the total retained-event count and the per-event-type
+// breakdown, plus the earliest retained event timestamp. It reads the raw
+// `events` table (bounded by retention) so the "by event" breakdown reflects
+// the live, retained window. AGGREGATE only — no install_id or identity column
+// is selected.
+func (s *pgxStore) SummaryByEvent(ctx context.Context) (int64, []EventCount, time.Time, error) {
+	const q = `
+SELECT event, count(*) AS c, min(ts) AS since
+FROM events
+GROUP BY event`
+	rows, err := s.pool.Query(ctx, q)
+	if err != nil {
+		return 0, nil, time.Time{}, fmt.Errorf("telemetry summary: %w", err)
+	}
+	defer rows.Close()
+
+	var (
+		total   int64
+		byEvent []EventCount
+		since   time.Time
+	)
+	for rows.Next() {
+		var (
+			ev      string
+			c       int64
+			eventTS time.Time
+		)
+		if err := rows.Scan(&ev, &c, &eventTS); err != nil {
+			return 0, nil, time.Time{}, fmt.Errorf("telemetry summary scan: %w", err)
+		}
+		total += c
+		byEvent = append(byEvent, EventCount{Event: ev, Count: c})
+		if since.IsZero() || eventTS.Before(since) {
+			since = eventTS.UTC()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, nil, time.Time{}, fmt.Errorf("telemetry summary rows: %w", err)
+	}
+	return total, byEvent, since, nil
+}
+
+// TopComponents returns the most-counted components for metric (install|
+// download), highest first, from the long-lived agg_component_daily rollup so
+// the figures survive raw-event retention pruning (design D6). Aggregate only.
+func (s *pgxStore) TopComponents(ctx context.Context, metric string, limit int) ([]ComponentCount, error) {
+	if metric != "install" && metric != "download" {
+		metric = "install"
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 10
+	}
+	const q = `
+SELECT kind, namespace, name, COALESCE(sum(count),0) AS total
+FROM agg_component_daily
+WHERE event = $1
+GROUP BY kind, namespace, name
+ORDER BY total DESC, kind, namespace, name
+LIMIT $2`
+	rows, err := s.pool.Query(ctx, q, metric, limit)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry top components: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]ComponentCount, 0, limit)
+	for rows.Next() {
+		var cc ComponentCount
+		if err := rows.Scan(&cc.Kind, &cc.Namespace, &cc.Name, &cc.Count); err != nil {
+			return nil, fmt.Errorf("telemetry top components scan: %w", err)
+		}
+		out = append(out, cc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("telemetry top components rows: %w", err)
+	}
+	return out, nil
+}
+
+// Trends returns per-day counts for event over the last `days` days (UTC),
+// oldest first, from agg_component_daily (for install/download/resolve) or
+// agg_funnel_daily (for activation). Aggregate only.
+func (s *pgxStore) Trends(ctx context.Context, event string, days int) ([]TrendPoint, error) {
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -days)
+
+	var (
+		q    string
+		args []any
+	)
+	switch event {
+	case "activation":
+		// activation rolls up in agg_funnel_daily and takes only the cutoff —
+		// pass a single arg so the SQL has no unused placeholder (a $1-unused
+		// query is fragile across pgx exec modes).
+		q = `
+SELECT day, COALESCE(sum(count),0) AS total
+FROM agg_funnel_daily
+WHERE day >= $1::date
+GROUP BY day
+ORDER BY day ASC`
+		args = []any{cutoff}
+	default:
+		q = `
+SELECT day, COALESCE(sum(count),0) AS total
+FROM agg_component_daily
+WHERE event = $1 AND day >= $2::date
+GROUP BY day
+ORDER BY day ASC`
+		args = []any{event, cutoff}
+	}
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry trends: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]TrendPoint, 0, days)
+	for rows.Next() {
+		var (
+			day time.Time
+			c   int64
+		)
+		if err := rows.Scan(&day, &c); err != nil {
+			return nil, fmt.Errorf("telemetry trends scan: %w", err)
+		}
+		out = append(out, TrendPoint{Date: day.UTC().Format("2006-01-02"), Count: c})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("telemetry trends rows: %w", err)
+	}
+	return out, nil
+}
+
+// Funnel returns the onboarding-funnel step counts aggregated across all days,
+// highest first, from the long-lived agg_funnel_daily rollup. Aggregate only.
+func (s *pgxStore) Funnel(ctx context.Context) ([]FunnelStep, error) {
+	const q = `
+SELECT step, COALESCE(sum(count),0) AS total
+FROM agg_funnel_daily
+GROUP BY step
+ORDER BY total DESC, step`
+	rows, err := s.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry funnel: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]FunnelStep, 0, 8)
+	for rows.Next() {
+		var fs FunnelStep
+		if err := rows.Scan(&fs.Step, &fs.Count); err != nil {
+			return nil, fmt.Errorf("telemetry funnel scan: %w", err)
+		}
+		out = append(out, fs)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("telemetry funnel rows: %w", err)
+	}
+	return out, nil
+}
+
+// EventCount returns the number of raw events currently retained.
+func (s *pgxStore) EventCount(ctx context.Context) (int64, error) {
+	var n int64
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM events`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("telemetry event count: %w", err)
+	}
+	return n, nil
+}
+
+// --- Stage-2 feedback reads ---
+
+// ListFeedback returns feedback events (newest first), paginated by
+// limit/offset, plus the total count. Feedback rows carry only the structured
+// rating/category and the free text — no identity (design D8).
+func (s *pgxStore) ListFeedback(ctx context.Context, limit, offset int) ([]Event, int, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	var total int
+	if err := s.pool.QueryRow(ctx,
+		`SELECT count(*) FROM events WHERE event = 'feedback'`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("telemetry feedback count: %w", err)
+	}
+
+	const q = `
+SELECT rating, category, text, ts
+FROM events
+WHERE event = 'feedback'
+ORDER BY ts DESC, id DESC
+LIMIT $1 OFFSET $2`
+	rows, err := s.pool.Query(ctx, q, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("telemetry feedback list: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]Event, 0, limit)
+	for rows.Next() {
+		var (
+			ev       Event
+			rating   *int
+			category *string
+			text     *string
+			ts       time.Time
+		)
+		if err := rows.Scan(&rating, &category, &text, &ts); err != nil {
+			return nil, 0, fmt.Errorf("telemetry feedback scan: %w", err)
+		}
+		ev.Event = "feedback"
+		ev.Rating = rating
+		ev.Category = deref(category)
+		ev.Text = deref(text)
+		ev.Timestamp = ts.UTC()
+		out = append(out, ev)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("telemetry feedback rows: %w", err)
+	}
+	return out, total, nil
+}
+
+// --- Stage-2 profile activity: the ONLY identity↔telemetry link (D5) ---
+
+// Claim links a pseudonymous install_id to the signed-in user's email,
+// idempotently (re-claiming the same pair updates the timestamp). This is the
+// single, explicit, user-initiated mapping; it lives in the SEPARATE
+// install_claims table and is NEVER joined back into the events PII-free schema
+// except through the user's own ActivityFor read.
+func (s *pgxStore) Claim(ctx context.Context, installID, userEmail string) error {
+	const q = `
+INSERT INTO install_claims (install_id, user_email, ts)
+VALUES ($1, $2, now())
+ON CONFLICT (install_id, user_email) DO UPDATE SET ts = now()`
+	if _, err := s.pool.Exec(ctx, q, installID, userEmail); err != nil {
+		return fmt.Errorf("telemetry claim: %w", err)
+	}
+	return nil
+}
+
+// ActivityFor returns the installs the user voluntarily claimed, newest first.
+// It joins the user's claimed install_ids (install_claims) to install events
+// for those ids — so install activity appears ONLY for an install_id the user
+// explicitly claimed, never by reversing an unclaimed pseudonymous id (D5).
+func (s *pgxStore) ActivityFor(ctx context.Context, userEmail string, limit int) ([]ClaimedInstall, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	const q = `
+SELECT e.kind, e.name, e.version, e.ts
+FROM events e
+JOIN install_claims c ON c.install_id = e.install_id
+WHERE c.user_email = $1 AND e.event = 'install'
+ORDER BY e.ts DESC, e.id DESC
+LIMIT $2`
+	rows, err := s.pool.Query(ctx, q, userEmail, limit)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry activity: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]ClaimedInstall, 0, limit)
+	for rows.Next() {
+		var (
+			ci               ClaimedInstall
+			kind, name, vers *string
+			ts               time.Time
+		)
+		if err := rows.Scan(&kind, &name, &vers, &ts); err != nil {
+			return nil, fmt.Errorf("telemetry activity scan: %w", err)
+		}
+		ci.Kind = deref(kind)
+		ci.Name = deref(name)
+		ci.Version = deref(vers)
+		ci.Timestamp = ts.UTC()
+		out = append(out, ci)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("telemetry activity rows: %w", err)
+	}
+	return out, nil
 }
 
 func (s *pgxStore) Available() bool { return true }

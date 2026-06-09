@@ -76,8 +76,7 @@ func TestOpenAPISpec_UIPathsUnchanged(t *testing.T) {
 
 // TestOpenAPISpec_HasTelemetryIngest asserts the Stage-1 telemetry ingest path
 // is declared (server-rooted under /api/v1, so it appears as "/telemetry") and
-// references the closed TelemetryEvent schema. The admin analytics/observability/
-// feedback read paths are Stage 2 and intentionally NOT declared yet.
+// references the closed TelemetryEvent schema.
 func TestOpenAPISpec_HasTelemetryIngest(t *testing.T) {
 	h := newWireTestServer(t, "")
 	paths := openapiPaths(t, h)
@@ -88,6 +87,42 @@ func TestOpenAPISpec_HasTelemetryIngest(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.True(t, strings.Contains(w.Body.String(), "TelemetryEvent"),
 		"OpenAPI spec must define the TelemetryEvent schema")
+}
+
+// TestOpenAPISpec_HasStage2AdminPaths asserts the Stage-2 admin analytics /
+// observability / feedback / activity read paths are now declared (task 11.1),
+// server-rooted under /api/v1 so they appear without the prefix, plus their
+// aggregate schemas. Existing /v1 and /api/v1 paths remain (covered above).
+func TestOpenAPISpec_HasStage2AdminPaths(t *testing.T) {
+	h := newWireTestServer(t, "")
+	paths := openapiPaths(t, h)
+	required := []string{
+		"/admin/analytics/summary",
+		"/admin/analytics/top",
+		"/admin/analytics/trends",
+		"/admin/analytics/funnel",
+		"/admin/observability",
+		"/admin/feedback",
+		"/admin/feedback/summary",
+		"/admin/activity/claim",
+		"/admin/activity",
+	}
+	for _, p := range required {
+		require.Contains(t, paths, p, "OpenAPI spec missing Stage-2 admin path %q", p)
+	}
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	for _, schema := range []string{
+		"AnalyticsSummary", "AnalyticsTop", "AnalyticsTrends", "AnalyticsFunnel",
+		"Observability", "FeedbackList", "FeedbackSummary", "ClaimRequest", "Activity",
+		"StoreUnavailable",
+	} {
+		require.True(t, strings.Contains(body, schema),
+			"OpenAPI spec must define the %q schema/response", schema)
+	}
 }
 
 func TestOpenAPISpec_WireSchemasReferenced(t *testing.T) {

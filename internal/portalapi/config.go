@@ -78,6 +78,27 @@ type Config struct {
 	// retention loop runs on the elected (lowest-ordinal) replica. Default 1h.
 	// Sourced from FDH_TELEMETRY_AGGREGATE_INTERVAL.
 	TelemetryAggregateInterval time.Duration
+
+	// FeedbackSummaryEnabled gates the OPTIONAL LLM-synthesized feedback digest
+	// (capability hub-usage-telemetry, design D8). It is OFF by default and has
+	// NO hard LLM dependency: when off — or on but without a configured provider
+	// — GET /api/v1/admin/feedback/summary returns {enabled:false}. The raw
+	// feedback list (GET /api/v1/admin/feedback) renders regardless. Sourced
+	// from TELEMETRY_FEEDBACK_SUMMARY ("on"/"true"/"1" enable).
+	FeedbackSummaryEnabled bool
+
+	// FeedbackSummaryProvider names the synthesis provider/key indirection for
+	// the optional feedback digest (operator-supplied; awaits org owner). When
+	// empty, the summary stays {enabled:false} even if the flag is on — no LLM
+	// dependency is required to ship. Sourced from TELEMETRY_FEEDBACK_PROVIDER.
+	FeedbackSummaryProvider string
+
+	// PrometheusQueryURL is an OPTIONAL external Prometheus query endpoint
+	// (design D7). When set, the observability surface MAY enrich first-party
+	// health with PromQL; when empty (the default), the panel renders entirely
+	// from the API's own metrics + store aggregates — there is NO hard
+	// Prometheus dependency. Sourced from PROMETHEUS_QUERY_URL.
+	PrometheusQueryURL string
 }
 
 // LoadConfig builds a Config from environment variables, applying defaults
@@ -96,6 +117,16 @@ func LoadConfig() (Config, error) {
 		OTLPEndpoint:      os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 		HubPath:           envOr("FDH_PORTAL_HUB_PATH", "/srv/hub"),
 		TelemetryDSN:      os.Getenv("FDH_TELEMETRY_DSN"),
+
+		// Optional feedback auto-summary (design D8) — OFF by default, no LLM
+		// dependency. The summary stays disabled unless BOTH the flag is on AND
+		// a provider is configured.
+		FeedbackSummaryEnabled:  truthyEnv("TELEMETRY_FEEDBACK_SUMMARY"),
+		FeedbackSummaryProvider: strings.TrimSpace(os.Getenv("TELEMETRY_FEEDBACK_PROVIDER")),
+
+		// Optional external Prometheus enrichment (design D7) — empty by default;
+		// the observability panel renders first-party health without it.
+		PrometheusQueryURL: strings.TrimSpace(os.Getenv("PROMETHEUS_QUERY_URL")),
 	}
 
 	// Telemetry retention window (raw events). Default 180 days (design D6);
@@ -158,11 +189,29 @@ func (c Config) IDPProfileValid() bool {
 	return false
 }
 
+// FeedbackSummaryActive reports whether the optional LLM feedback digest is
+// BOTH flag-enabled AND backed by a configured provider. When false, the
+// summary endpoint returns {enabled:false} and no LLM is invoked (design D8) —
+// there is no hard LLM dependency to ship.
+func (c Config) FeedbackSummaryActive() bool {
+	return c.FeedbackSummaryEnabled && c.FeedbackSummaryProvider != ""
+}
+
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback
+}
+
+// truthyEnv reports whether the named env var is set to an affirmative value
+// (1/true/yes/on, case-insensitive). Used for boolean feature flags.
+func truthyEnv(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // BuildInfo is link-time metadata stamped into the binary.
