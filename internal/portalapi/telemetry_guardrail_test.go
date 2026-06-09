@@ -27,8 +27,8 @@ func TestGuardrail_TelemetryNeverWritesCatalogConfig(t *testing.T) {
 	hub := t.TempDir()
 	// A minimal catalog CONFIG surface the guardrail protects.
 	files := map[string]string{
-		filepath.Join(hub, "hub", "registry.yaml"):              "schema_version: 2\nregistry: forge-development-hub\n",
-		filepath.Join(hub, "hub", "harnesses.yaml"):             "harnesses: []\n",
+		filepath.Join(hub, "hub", "registry.yaml"):                "schema_version: 2\nregistry: forge-development-hub\n",
+		filepath.Join(hub, "hub", "harnesses.yaml"):               "harnesses: []\n",
 		filepath.Join(hub, "skills", "design-system", "SKILL.md"): "---\nname: design-system\n---\nbody\n",
 	}
 	for p, content := range files {
@@ -105,9 +105,9 @@ func TestGuardrail_OrdinalElection(t *testing.T) {
 		{"fdh-portal-api-0", true},
 		{"fdh-portal-api-1", false},
 		{"fdh-portal-api-10", false},
-		{"laptop", true},          // no ordinal suffix → single/local → elect
-		{"some-host", true},       // trailing non-numeric → undeterminable → elect
-		{"", true},                // empty → undeterminable → elect
+		{"laptop", true},    // no ordinal suffix → single/local → elect
+		{"some-host", true}, // trailing non-numeric → undeterminable → elect
+		{"", true},          // empty → undeterminable → elect
 	}
 	for _, c := range cases {
 		t.Run(c.podName, func(t *testing.T) {

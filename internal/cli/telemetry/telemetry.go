@@ -157,9 +157,9 @@ func (m *Manager) save() error {
 type EnablementSource string
 
 const (
-	SourceDoNotTrack EnablementSource = "DO_NOT_TRACK"       // forced off
-	SourceEnv        EnablementSource = "FDH_TELEMETRY"      // env override
-	SourceConfig     EnablementSource = "telemetry.enabled"  // config key
+	SourceDoNotTrack EnablementSource = "DO_NOT_TRACK"      // forced off
+	SourceEnv        EnablementSource = "FDH_TELEMETRY"     // env override
+	SourceConfig     EnablementSource = "telemetry.enabled" // config key
 	SourceConsent    EnablementSource = "consent"           // first-run answer
 	SourceDefault    EnablementSource = "default"           // unset → OFF
 )
