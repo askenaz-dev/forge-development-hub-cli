@@ -23,7 +23,6 @@ type ActivationEvent struct {
 	Event           string    `json:"event"`
 	Step            string    `json:"step"`
 	WizardSessionID string    `json:"wizard_session_id"`
-	UserID          string    `json:"user_id,omitempty"`
 	Locale          string    `json:"locale,omitempty"`
 	OS              string    `json:"os,omitempty"`
 }

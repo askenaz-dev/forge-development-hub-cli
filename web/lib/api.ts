@@ -319,10 +319,76 @@ async function postJSONService<T>(path: string, opts: ServiceFetchOptions): Prom
   return (await res.json()) as T;
 }
 
+// --- Stage-2 admin reads: typed store-unavailable result (capability
+// hub-usage-telemetry, tasks 5.3/5.4) ----------------------------------------
+//
+// The Stage-2 analytics/observability/feedback/activity reads target an OPTIONAL
+// telemetry store. When that store is degraded the Go API does NOT 500 — it
+// returns HTTP 503 with `{"error":"store_unavailable"}` and a `Retry-After`
+// header (see `internal/portalapi/observability.go` storeUnavailable). The web
+// panels must surface a RETRY state, not an error panel, in that case.
+//
+// So these helpers DO NOT throw on a degraded store: they return a discriminated
+// union (`ServiceResult<T>`). A genuine transport/auth/BFF failure still throws
+// `ApiError` (the panel catches it → ErrorPanel); only the typed degraded-store
+// signal is folded into the success-or-retry union the panel branches on.
+
+/** The store_unavailable error code the Go API returns on a degraded store. */
+export const STORE_UNAVAILABLE = "store_unavailable";
+
 /**
- * One onboarding activation event from the in-memory ring buffer
- * (`GET /api/v1/admin/activation`). The buffer is EPHEMERAL — cleared on API
- * restart; durable analytics arrive in `hub-usage-telemetry` (Phase 2).
+ * Discriminated result for a Stage-2 admin read. `ok:true` carries the parsed
+ * data; `ok:false` means the telemetry store is temporarily unavailable
+ * (HTTP 503 `store_unavailable`) and the panel should render its retry state.
+ * Any OTHER failure (network, 401/403, malformed) is thrown as `ApiError` and
+ * is NOT represented here — callers wrap in try/catch for those.
+ */
+export type ServiceResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; storeUnavailable: true; retryAfter?: number };
+
+/** Parse a numeric `Retry-After` (delta-seconds) header; undefined if absent. */
+function parseRetryAfter(res: Response): number | undefined {
+  const raw = res.headers.get("Retry-After");
+  if (!raw) return undefined;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * GET a Stage-2 admin JSON resource, folding the typed `store_unavailable`
+ * (HTTP 503) into a `ServiceResult` instead of throwing. Every other non-2xx
+ * status throws `ApiError` so the caller's try/catch surfaces a hard failure.
+ */
+async function getServiceResult<T>(
+  path: string,
+  opts: ServiceFetchOptions
+): Promise<ServiceResult<T>> {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { Authorization: `Bearer ${opts.serviceToken}` },
+    signal: opts.signal,
+    cache: "no-store",
+  });
+  if (res.status === 503) {
+    // Confirm it is the typed store_unavailable code (a generic 503 from an
+    // upstream proxy should still surface as a hard error, not a silent retry).
+    const body = await safeText(res);
+    if (body.includes(STORE_UNAVAILABLE)) {
+      return { ok: false, storeUnavailable: true, retryAfter: parseRetryAfter(res) };
+    }
+    throw new ApiError(res.status, body);
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status, await safeText(res));
+  }
+  return { ok: true, data: (await res.json()) as T };
+}
+
+/**
+ * One onboarding activation event read from the durable telemetry store
+ * (`GET /api/v1/admin/activation`, persisted as event=activation — the legacy
+ * in-memory ring buffer was removed in `hub-usage-telemetry`, so events now
+ * survive an API restart). The record is PII-free: no identity field is carried.
  * Field names match the Go `ActivationEvent` JSON tags.
  */
 export interface ActivationEvent {
@@ -330,7 +396,6 @@ export interface ActivationEvent {
   event: string;
   step: string;
   wizard_session_id: string;
-  user_id?: string;
   locale?: string;
   os?: string;
 }
@@ -442,4 +507,260 @@ export function aggregateCatalogStats(components: ComponentSummary[]): CatalogSt
     deprecated: 0,
     yanked: 0,
   };
+}
+
+// ============================================================================
+// Stage-2 admin telemetry surfaces (capability hub-usage-telemetry)
+// ----------------------------------------------------------------------------
+// All SERVER-ONLY, service-token authenticated (Bearer = getServiceToken()),
+// cached `no-store`. The READS return `ServiceResult<T>` so a degraded store
+// (HTTP 503 store_unavailable) surfaces as a retry state rather than throwing;
+// the WRITE (claim) returns a plain shape and throws ApiError on hard failure.
+// Field names mirror the Go handler JSON exactly (analytics_handlers.go,
+// observability.go, activity_handlers.go). Aggregates only — no identity join,
+// except the explicit, user-initiated install claim (design D5).
+// ============================================================================
+
+/** The closed event set the analytics summary breaks counts down by. */
+export type TelemetryEvent =
+  | "install"
+  | "download"
+  | "resolve"
+  | "activation"
+  | "feedback";
+
+/**
+ * `GET /api/v1/admin/analytics/summary` — total retained-event count, the
+ * per-event-type breakdown (every bucket always present, zero when absent), and
+ * the earliest retained timestamp (`since`, RFC3339 or "" when empty).
+ */
+export interface AnalyticsSummary {
+  total: number;
+  by_event: Record<TelemetryEvent, number>;
+  since: string;
+}
+
+export async function getAnalyticsSummary(
+  opts: { serviceToken: string }
+): Promise<ServiceResult<AnalyticsSummary>> {
+  return getServiceResult<AnalyticsSummary>(
+    "/api/v1/admin/analytics/summary",
+    opts
+  );
+}
+
+/** One aggregate row in the top-installed / top-downloaded list. No identity. */
+export interface TopComponent {
+  kind: string;
+  namespace: string;
+  name: string;
+  count: number;
+}
+
+export interface AnalyticsTop {
+  metric: "install" | "download";
+  items: TopComponent[];
+}
+
+/**
+ * `GET /api/v1/admin/analytics/top?metric=install|download&limit=N` — the
+ * most-counted components for the chosen metric, aggregate-only.
+ */
+export async function getAnalyticsTop(
+  metric: "install" | "download",
+  limit: number,
+  opts: { serviceToken: string }
+): Promise<ServiceResult<AnalyticsTop>> {
+  const q = new URLSearchParams({ metric, limit: String(limit) });
+  return getServiceResult<AnalyticsTop>(
+    `/api/v1/admin/analytics/top?${q.toString()}`,
+    opts
+  );
+}
+
+/** One (date, count) point in an install/event trend. `date` is YYYY-MM-DD. */
+export interface TrendPoint {
+  date: string;
+  count: number;
+}
+
+export interface AnalyticsTrends {
+  event: string;
+  points: TrendPoint[];
+}
+
+/**
+ * `GET /api/v1/admin/analytics/trends?event=E&days=N` — per-day counts for the
+ * event over the window, oldest first.
+ */
+export async function getAnalyticsTrends(
+  event: TelemetryEvent,
+  days: number,
+  opts: { serviceToken: string }
+): Promise<ServiceResult<AnalyticsTrends>> {
+  const q = new URLSearchParams({ event, days: String(days) });
+  return getServiceResult<AnalyticsTrends>(
+    `/api/v1/admin/analytics/trends?${q.toString()}`,
+    opts
+  );
+}
+
+/** One onboarding-funnel step (derived from activation aggregates). */
+export interface FunnelStep {
+  step: string;
+  count: number;
+}
+
+export interface AnalyticsFunnel {
+  steps: FunnelStep[];
+}
+
+/** `GET /api/v1/admin/analytics/funnel` — onboarding funnel, highest first. */
+export async function getFunnel(
+  opts: { serviceToken: string }
+): Promise<ServiceResult<AnalyticsFunnel>> {
+  return getServiceResult<AnalyticsFunnel>(
+    "/api/v1/admin/analytics/funnel",
+    opts
+  );
+}
+
+/**
+ * `GET /api/v1/admin/observability` — first-party site/component health
+ * (design D7). Renders entirely from first-party data; the store block reports
+ * `available:false`/`event_count:0` when the store is degraded WITHOUT failing
+ * the read, so this endpoint never returns store_unavailable.
+ */
+export interface Observability {
+  uptime_seconds: number;
+  requests_total: number;
+  error_rate: number;
+  latency_ms: { p50: number; p95: number };
+  store: { available: boolean; event_count: number };
+  components: { kind: string; name: string; scan_status: string }[];
+  /** Present only when the optional PROMETHEUS_QUERY_URL enrichment is set. */
+  prometheus_query_url?: string;
+}
+
+export async function getObservability(
+  opts: { serviceToken: string }
+): Promise<ServiceResult<Observability>> {
+  // Observability always renders from first-party data; it is modeled as a
+  // ServiceResult for symmetry, but in practice only ok:true / ApiError occur.
+  return getServiceResult<Observability>("/api/v1/admin/observability", opts);
+}
+
+/** One persisted feedback row. Carries NO identity (design D4/D8). */
+export interface FeedbackItem {
+  rating: number;
+  category: string;
+  text: string;
+  ts: string;
+}
+
+export interface FeedbackPage {
+  items: FeedbackItem[];
+  count: number;
+}
+
+/**
+ * `GET /api/v1/admin/feedback?limit=&offset=` — persisted feedback (newest
+ * first), paginated, plus the total count. Renders without any LLM.
+ */
+export async function getFeedback(
+  params: { limit: number; offset: number },
+  opts: { serviceToken: string }
+): Promise<ServiceResult<FeedbackPage>> {
+  const q = new URLSearchParams({
+    limit: String(params.limit),
+    offset: String(params.offset),
+  });
+  return getServiceResult<FeedbackPage>(
+    `/api/v1/admin/feedback?${q.toString()}`,
+    opts
+  );
+}
+
+/**
+ * `GET /api/v1/admin/feedback/summary` — the OPTIONAL, feature-flagged
+ * LLM-synthesized digest (design D8). `enabled:false` when the flag is off or
+ * no provider is configured (no LLM dependency exercised). This endpoint does
+ * not touch the store, so it never returns store_unavailable.
+ */
+export interface FeedbackSummary {
+  enabled: boolean;
+  summary: string;
+  generated_at: string;
+}
+
+export async function getFeedbackSummary(
+  opts: { serviceToken: string }
+): Promise<ServiceResult<FeedbackSummary>> {
+  return getServiceResult<FeedbackSummary>(
+    "/api/v1/admin/feedback/summary",
+    opts
+  );
+}
+
+/** One voluntarily-claimed install in a user's profile activity feed. */
+export interface ClaimedInstall {
+  kind: string;
+  name: string;
+  version: string;
+  ts: string;
+}
+
+/**
+ * `GET /api/v1/admin/activity?user=<email>` — the installs the user voluntarily
+ * claimed (design D5), newest first. Empty for an unknown/unclaimed user — never
+ * derived by reversing a pseudonymous install_id.
+ */
+export async function getActivity(
+  email: string,
+  opts: { serviceToken: string }
+): Promise<ServiceResult<{ installs: ClaimedInstall[] }>> {
+  const q = new URLSearchParams({ user: email });
+  return getServiceResult<{ installs: ClaimedInstall[] }>(
+    `/api/v1/admin/activity?${q.toString()}`,
+    opts
+  );
+}
+
+/** Result of a voluntary install claim. `claimed:true` on a recorded 202. */
+export type ClaimResult =
+  | { ok: true }
+  | { ok: false; storeUnavailable: true; retryAfter?: number };
+
+/**
+ * `POST /api/v1/admin/activity/claim` — the ONE explicit identity↔telemetry
+ * link (design D5 / task 12.2). The web passes the SESSION user's OWN email as
+ * `user` and the install-id the user copied from `fdh telemetry claim`. Returns
+ * 202 on success. A degraded store yields a store_unavailable retry signal; any
+ * other non-2xx (bad request, 403, transport) throws ApiError.
+ */
+export async function claimInstall(
+  installId: string,
+  email: string,
+  opts: { serviceToken: string }
+): Promise<ClaimResult> {
+  const res = await fetch(`${BASE}/api/v1/admin/activity/claim`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${opts.serviceToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ install_id: installId, user: email }),
+    cache: "no-store",
+  });
+  if (res.status === 503) {
+    const body = await safeText(res);
+    if (body.includes(STORE_UNAVAILABLE)) {
+      return { ok: false, storeUnavailable: true, retryAfter: parseRetryAfter(res) };
+    }
+    throw new ApiError(res.status, body);
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status, await safeText(res));
+  }
+  return { ok: true };
 }

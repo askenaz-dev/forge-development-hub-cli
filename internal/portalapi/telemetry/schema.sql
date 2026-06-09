@@ -64,3 +64,27 @@ CREATE TABLE IF NOT EXISTS agg_funnel_daily (
     count  BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (day, step)
 );
+
+-- Voluntary install claims (capability hub-usage-telemetry, design D5 / Stage 2).
+--
+-- This table is the ONE — and ONLY — identity ↔ telemetry link the platform
+-- stores, and it exists EXCLUSIVELY because the signed-in user VOLUNTARILY
+-- claimed a machine's pseudonymous install_id into their profile (the explicit
+-- user-initiated claim of D5 / task 12.2). It is deliberately SEPARATE from the
+-- `events` table: events stay PII-free and are never joined to identity. The
+-- platform never derives this mapping by reversing an install_id — it is only
+-- ever written by the explicit POST /api/v1/admin/activity/claim flow.
+--
+-- The user_email here is the signed-in user's own email (the stable key,
+-- consistent with the Phase-1 contributions derivation). A user may claim
+-- multiple machines (install_ids); the same (install_id, user_email) pair is
+-- idempotent (re-claiming is a no-op upsert).
+CREATE TABLE IF NOT EXISTS install_claims (
+    install_id  TEXT        NOT NULL,
+    user_email  TEXT        NOT NULL,
+    ts          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (install_id, user_email)
+);
+
+-- Activity-feed reads filter claims by the signed-in user's email.
+CREATE INDEX IF NOT EXISTS install_claims_user_idx ON install_claims (user_email);

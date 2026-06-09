@@ -62,13 +62,54 @@ type Event struct {
 	Timestamp       time.Time // RFC3339 UTC client/server timestamp
 }
 
+// EventCount pairs an event type with its total count, for the analytics
+// summary's by_event breakdown. AGGREGATE only — never an identity row.
+type EventCount struct {
+	Event string
+	Count int64
+}
+
+// ComponentCount is a per-component aggregate count for the top-installed /
+// top-downloaded analytics views. AGGREGATE only — no install_id, no identity.
+type ComponentCount struct {
+	Kind      string
+	Namespace string
+	Name      string
+	Count     int64
+}
+
+// TrendPoint is one (day, count) data point for the install-trends view.
+type TrendPoint struct {
+	Date  string // YYYY-MM-DD (UTC)
+	Count int64
+}
+
+// FunnelStep is one onboarding-funnel step with its aggregate count.
+type FunnelStep struct {
+	Step  string
+	Count int64
+}
+
+// ClaimedInstall is one install the signed-in user voluntarily claimed,
+// surfaced in their profile activity feed (design D5). It is derived ONLY from
+// the explicit install_claims link joined to that user's claimed install_ids —
+// never by reversing a pseudonymous id.
+type ClaimedInstall struct {
+	Kind      string
+	Name      string
+	Version   string
+	Timestamp time.Time
+}
+
 // Store is the persistence boundary for telemetry. A live pgxStore talks to the
 // shared Postgres; a degraded noopStore is returned when the DSN is empty or
 // Postgres is unreachable so callers never crash.
 //
-// Aggregate read methods are intentionally minimal in Stage 1: ListActivation
-// repoints the existing admin activation read. The Stage-2 admin analytics
-// endpoints add their own aggregate readers; this interface grows additively.
+// Read methods that aggregate return ErrStoreUnavailable on a degraded store so
+// handlers surface a typed store_unavailable (with Retry-After) instead of a
+// 500. Every analytics read returns AGGREGATES ONLY — no method joins an
+// install_id to an identity. The single, explicit identity↔telemetry link is
+// the voluntary install claim (Claim / ActivityFor, design D5).
 type Store interface {
 	// Insert persists one event. Returns an error on a degraded store or a
 	// failed write; callers on the ingest path swallow it (best-effort drop).
@@ -82,6 +123,48 @@ type Store interface {
 	// the retention window. Driven by the in-process loop on the elected
 	// replica. A degraded store returns ErrStoreUnavailable (the loop pauses).
 	Aggregate(ctx context.Context, retention time.Duration) error
+
+	// --- Stage-2 admin analytics reads (aggregates only) ---
+
+	// SummaryByEvent returns the total event count and the per-event-type
+	// breakdown for the whole retained window (or since the store's earliest
+	// retained event). since reports the earliest event timestamp covered.
+	SummaryByEvent(ctx context.Context) (total int64, byEvent []EventCount, since time.Time, err error)
+
+	// TopComponents returns the most-counted components for a given metric
+	// event ("install" or "download"), highest first, capped at limit.
+	TopComponents(ctx context.Context, metric string, limit int) ([]ComponentCount, error)
+
+	// Trends returns the per-day counts for the given event over the last
+	// `days` days (UTC), oldest first.
+	Trends(ctx context.Context, event string, days int) ([]TrendPoint, error)
+
+	// Funnel returns the onboarding-funnel step counts (aggregated across all
+	// days), highest first.
+	Funnel(ctx context.Context) ([]FunnelStep, error)
+
+	// EventCount returns the number of raw events currently retained (a store
+	// health signal for the observability surface).
+	EventCount(ctx context.Context) (int64, error)
+
+	// --- Stage-2 feedback reads ---
+
+	// ListFeedback returns persisted feedback events (newest first), paginated
+	// by limit/offset, plus the total count.
+	ListFeedback(ctx context.Context, limit, offset int) (items []Event, total int, err error)
+
+	// --- Stage-2 profile activity (the ONLY identity↔telemetry link, D5) ---
+
+	// Claim links a pseudonymous install_id to the signed-in user's email,
+	// idempotently. This is the single, explicit, user-initiated mapping; it is
+	// stored in the SEPARATE install_claims table, never joined into events.
+	Claim(ctx context.Context, installID, userEmail string) error
+
+	// ActivityFor returns the installs the given user voluntarily claimed,
+	// newest first. It joins the user's claimed install_ids to the install
+	// events for those ids — so install activity appears ONLY after a claim,
+	// never by reversing an unclaimed id.
+	ActivityFor(ctx context.Context, userEmail string, limit int) ([]ClaimedInstall, error)
 
 	// Available reports whether the store is backed by a live database.
 	Available() bool

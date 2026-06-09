@@ -51,6 +51,18 @@ Privacy policy: ` + telemetry.PrivacyPolicyURL,
 		Short: "Rotate the pseudonymous install id (right-to-be-forgotten)",
 		RunE:  func(cmd *cobra.Command, args []string) error { return runTelemetryRotate(cmd) },
 	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "claim",
+		Short: "Print this machine's claim code to link its installs to your portal profile",
+		Long: `Print this machine's pseudonymous install id as a CLAIM CODE.
+
+Telemetry is anonymous: the platform never reverses your install id to your
+identity. If you WANT your installs from this machine to appear in your portal
+profile's activity feed, copy the claim code below and paste it into your
+profile. This is the only way installs are linked to you — it is voluntary and
+you initiate it. Requires telemetry to be enabled (so an install id exists).`,
+		RunE: func(cmd *cobra.Command, args []string) error { return runTelemetryClaim(cmd) },
+	})
 	return cmd
 }
 
@@ -118,6 +130,35 @@ func runTelemetryRotate(cmd *cobra.Command) error {
 	}
 	fmt.Fprintln(cmd.OutOrStdout(),
 		"Rotated the pseudonymous install id. The previous id can no longer be associated with this machine.")
+	return nil
+}
+
+// runTelemetryClaim prints the pseudonymous install id as the claim code the
+// user pastes into their portal profile to VOLUNTARILY link this machine's
+// installs to their activity feed (design D5). It refuses when telemetry is
+// disabled — no install id exists to claim, and we never materialize one for a
+// disabled user. Output is the claim code on its own line (plus a one-line
+// hint), in English.
+func runTelemetryClaim(cmd *cobra.Command) error {
+	mgr := telemetry.NewManager(defaultConfigDir())
+	configEnabled := strings.TrimSpace(viper.GetString("telemetry.enabled"))
+	d := mgr.ResolveWithConsent(configEnabled, os.Getenv)
+	if !d.Enabled {
+		return Errorf(ExitInvalidUsage,
+			"telemetry is disabled, so there is no install id to claim; run 'fdh telemetry enable' first")
+	}
+	id, err := mgr.InstallID()
+	if err != nil {
+		return Wrap(ExitPermission, fmt.Errorf("read install id: %w", err))
+	}
+
+	if outputMode(cmd) == "json" {
+		return emitJSON(cmd.OutOrStdout(), map[string]any{"claim_code": id})
+	}
+
+	w := cmd.OutOrStdout()
+	fmt.Fprintln(w, id)
+	fmt.Fprintln(w, "Paste this claim code into your portal profile to link this machine's installs to your activity feed.")
 	return nil
 }
 

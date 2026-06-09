@@ -28,6 +28,45 @@ func (n *noopStore) Aggregate(ctx context.Context, retention time.Duration) erro
 	return ErrStoreUnavailable
 }
 
+// All Stage-2 analytics/feedback/activity reads signal unavailability so the
+// admin handlers degrade to a typed store_unavailable (with Retry-After) rather
+// than a 500 (portal-runtime-resilience).
+
+func (n *noopStore) SummaryByEvent(ctx context.Context) (int64, []EventCount, time.Time, error) {
+	return 0, nil, time.Time{}, ErrStoreUnavailable
+}
+
+func (n *noopStore) TopComponents(ctx context.Context, metric string, limit int) ([]ComponentCount, error) {
+	return nil, ErrStoreUnavailable
+}
+
+func (n *noopStore) Trends(ctx context.Context, event string, days int) ([]TrendPoint, error) {
+	return nil, ErrStoreUnavailable
+}
+
+func (n *noopStore) Funnel(ctx context.Context) ([]FunnelStep, error) {
+	return nil, ErrStoreUnavailable
+}
+
+func (n *noopStore) EventCount(ctx context.Context) (int64, error) {
+	return 0, ErrStoreUnavailable
+}
+
+func (n *noopStore) ListFeedback(ctx context.Context, limit, offset int) ([]Event, int, error) {
+	return nil, 0, ErrStoreUnavailable
+}
+
+// Claim cannot persist on a degraded store. Unlike Insert (best-effort drop on
+// the anonymous ingest path), a claim is an explicit user action whose success
+// the caller reports, so it surfaces the unavailability.
+func (n *noopStore) Claim(ctx context.Context, installID, userEmail string) error {
+	return ErrStoreUnavailable
+}
+
+func (n *noopStore) ActivityFor(ctx context.Context, userEmail string, limit int) ([]ClaimedInstall, error) {
+	return nil, ErrStoreUnavailable
+}
+
 func (n *noopStore) Available() bool { return false }
 
 func (n *noopStore) Close() error { return nil }

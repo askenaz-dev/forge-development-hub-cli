@@ -18,6 +18,11 @@ import {
 } from "@/lib/api";
 import { getServiceToken } from "@/lib/bff";
 import { RefreshControl } from "./refresh-control";
+import {
+  AnalyticsPanel,
+  ObservabilityPanel,
+  FeedbackPanel,
+} from "./telemetry-panels";
 
 /**
  * /admin — the portal operations console. Auth-gated, then coarse-gated to the
@@ -244,7 +249,6 @@ export default async function AdminPage({
                       <Th>{t("colEvent")}</Th>
                       <Th>{t("colStep")}</Th>
                       <Th>{t("colSession")}</Th>
-                      <Th>{t("colUser")}</Th>
                       <Th>{t("colLocale")}</Th>
                       <Th>{t("colOs")}</Th>
                     </tr>
@@ -260,9 +264,6 @@ export default async function AdminPage({
                         <Td>{e.step}</Td>
                         <Td className="font-mono text-xs text-muted-foreground">
                           {e.wizard_session_id}
-                        </Td>
-                        <Td className="font-mono text-xs text-muted-foreground">
-                          {e.user_id ?? "—"}
                         </Td>
                         <Td className="font-mono text-xs">{e.locale ?? "—"}</Td>
                         <Td className="font-mono text-xs">{e.os ?? "—"}</Td>
@@ -299,6 +300,16 @@ export default async function AdminPage({
           </CardContent>
         </Card>
       </section>
+
+      {/* --- Stage-2 telemetry surfaces (capability hub-usage-telemetry) ---
+          Durable analytics, first-party observability, and the feedback
+          channel. Each panel mints the BFF service token, calls the admin-gated
+          API, and degrades independently: a typed `store_unavailable` shows a
+          calm retry notice (the store is optional), a BFF/API failure shows an
+          error panel — neither affects the Phase-1 content above. */}
+      <AnalyticsPanel />
+      <ObservabilityPanel />
+      <FeedbackPanel />
     </div>
   );
 }

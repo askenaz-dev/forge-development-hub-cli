@@ -5,7 +5,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -132,5 +134,48 @@ func TestEmitEnabledSendsOne(t *testing.T) {
 
 	if got := atomic.LoadInt32(&hits); got != 1 {
 		t.Fatalf("enabled emit sent %d request(s); want 1", got)
+	}
+}
+
+var hex64 = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+// TestTelemetryClaim_PrintsInstallID proves `fdh telemetry claim` prints the
+// pseudonymous install id (the 64-hex claim code) on its own line when
+// telemetry is enabled, plus a one-line hint. This is the value a user pastes
+// into their profile to link this machine's installs (design D5 / task 8.2).
+func TestTelemetryClaim_PrintsInstallID(t *testing.T) {
+	resetTelemetryViper(t, "", "true") // config opt-in
+	t.Setenv("DO_NOT_TRACK", "")
+	t.Setenv("FDH_TELEMETRY", "")
+	redirectConfigDir(t)
+
+	cmd := newTestCmd()
+	out := &bytes.Buffer{}
+	cmd.SetOut(out)
+	if err := runTelemetryClaim(cmd); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) < 1 {
+		t.Fatalf("claim produced no output")
+	}
+	code := strings.TrimSpace(lines[0])
+	if !hex64.MatchString(code) {
+		t.Fatalf("first line must be the 64-hex claim code, got %q", code)
+	}
+}
+
+// TestTelemetryClaim_RefusesWhenDisabled proves claim refuses (no install id is
+// materialized) when telemetry is OFF — we never create a salt for a disabled
+// user.
+func TestTelemetryClaim_RefusesWhenDisabled(t *testing.T) {
+	resetTelemetryViper(t, "", "") // default off
+	t.Setenv("DO_NOT_TRACK", "")
+	t.Setenv("FDH_TELEMETRY", "")
+	redirectConfigDir(t)
+
+	cmd := newTestCmd()
+	if err := runTelemetryClaim(cmd); err == nil {
+		t.Fatalf("claim must refuse when telemetry is disabled")
 	}
 }

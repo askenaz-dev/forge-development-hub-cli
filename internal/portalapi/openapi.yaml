@@ -177,6 +177,225 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  # --- Admin analytics / observability / feedback / activity (Stage 2) -------
+  # Capability hub-usage-telemetry (design D3/D5/D6/D7/D8). ALL admin-gated
+  # exactly like GET /api/v1/admin/activation; reached from the web ONLY via the
+  # portal BFF service credential (a Keycloak client-credentials token mapped to
+  # admin), NEVER a forwarded user bearer. Every analytics payload is an
+  # AGGREGATE — no endpoint returns a per-identity row or maps an install_id to
+  # an identity. On a degraded store these return 503 store_unavailable with a
+  # Retry-After header, not 500. The voluntary install claim/activity surface is
+  # the SINGLE explicit identity↔telemetry link (design D5).
+  /admin/analytics/summary:
+    get:
+      operationId: getAnalyticsSummary
+      summary: Aggregate telemetry counts and per-event breakdown
+      description: Total retained events, the per-event-type breakdown, and the earliest retained timestamp. Aggregate only.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Aggregate summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsSummary"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StoreUnavailable"
+
+  /admin/analytics/top:
+    get:
+      operationId: getAnalyticsTop
+      summary: Most-installed or most-downloaded components (aggregate)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: metric
+          schema: { type: string, enum: [install, download], default: install }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 10 }
+      responses:
+        "200":
+          description: Aggregate top components
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsTop"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StoreUnavailable"
+
+  /admin/analytics/trends:
+    get:
+      operationId: getAnalyticsTrends
+      summary: Per-day event counts over a window (aggregate)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: event
+          schema: { type: string, enum: [install, download, resolve, activation], default: install }
+        - in: query
+          name: days
+          schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+      responses:
+        "200":
+          description: Aggregate per-day trend points
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsTrends"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StoreUnavailable"
+
+  /admin/analytics/funnel:
+    get:
+      operationId: getAnalyticsFunnel
+      summary: Onboarding funnel step counts (aggregate)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Aggregate funnel steps from activation events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsFunnel"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StoreUnavailable"
+
+  /admin/observability:
+    get:
+      operationId: getObservability
+      summary: First-party site and component health
+      description: Uptime, request totals, error rate, latency percentiles, store health, and per-component scan status from first-party metrics + store aggregates. Renders without an external Prometheus query source.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: First-party health snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Observability"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/feedback:
+    get:
+      operationId: getFeedback
+      summary: Paginated raw feedback list
+      description: Persisted feedback events (newest first), paginated, plus the total count. Renders without any LLM. No identity is stored on a feedback row.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: Paginated feedback
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackList"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StoreUnavailable"
+
+  /admin/feedback/summary:
+    get:
+      operationId: getFeedbackSummary
+      summary: Optional LLM-synthesized feedback digest (feature-flagged)
+      description: When TELEMETRY_FEEDBACK_SUMMARY is on AND a provider is configured, returns a synthesized digest; otherwise returns {enabled:false} with NO LLM dependency.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Feedback summary (or disabled marker)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackSummary"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /admin/activity/claim:
+    post:
+      operationId: claimInstall
+      summary: Voluntarily link a machine's install id to a profile (the single identity↔telemetry link)
+      description: |
+        Records the user-initiated claim that links a pseudonymous install_id to
+        the signed-in user's email, in the SEPARATE install_claims table. This is
+        the only place the platform maps an install_id to an identity, and only
+        because the user explicitly claimed it (design D5). The events table stays
+        PII-free; nothing reverses an install_id.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimRequest"
+      responses:
+        "202":
+          description: Claim recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [claimed]
+                properties:
+                  claimed: { type: boolean, enum: [true] }
+        "400":
+          description: Missing install_id or user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StoreUnavailable"
+
+  /admin/activity:
+    get:
+      operationId: getActivity
+      summary: A user's voluntarily-claimed installs
+      description: Installs the given user explicitly claimed (design D5), newest first. Appears only after a claim — never by reversing an unclaimed id. Empty list for an unknown user.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: user
+          schema: { type: string }
+          description: The signed-in user's email (the BFF passes the session user's own email).
+      responses:
+        "200":
+          description: Claimed installs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Activity"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StoreUnavailable"
+
   # --- Component catalog (kind-aware; skills are the kind=skill view) --------
   /components:
     get:
@@ -442,6 +661,16 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    StoreUnavailable:
+      description: Telemetry store temporarily unavailable (retry); never a 500
+      headers:
+        Retry-After:
+          schema: { type: string }
+          description: Seconds to wait before retrying.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
 
   securitySchemes:
     bearerAuth:
@@ -632,6 +861,153 @@ components:
         text:
           type: string
           description: Feedback only — free text.
+
+    # --- Stage-2 admin analytics / observability / feedback / activity schemas
+    # Every analytics schema is an AGGREGATE shape — there is intentionally NO
+    # property that maps an install_id to an identity. The ONE identity↔telemetry
+    # link is the explicit ClaimRequest (design D5).
+    AnalyticsSummary:
+      type: object
+      required: [total, by_event, since]
+      properties:
+        total: { type: integer }
+        by_event:
+          type: object
+          properties:
+            install: { type: integer }
+            download: { type: integer }
+            resolve: { type: integer }
+            activation: { type: integer }
+            feedback: { type: integer }
+        # RFC3339 timestamp of the earliest retained event, or "" when the store
+        # has no retained events yet (fresh install / empty window). Not typed as
+        # format:date-time because the empty-store response is the common case.
+        since: { type: string }
+
+    AnalyticsTop:
+      type: object
+      required: [metric, items]
+      properties:
+        metric: { type: string, enum: [install, download] }
+        items:
+          type: array
+          items:
+            type: object
+            required: [kind, namespace, name, count]
+            properties:
+              kind: { type: string }
+              namespace: { type: string }
+              name: { type: string }
+              count: { type: integer }
+
+    AnalyticsTrends:
+      type: object
+      required: [event, points]
+      properties:
+        event: { type: string }
+        points:
+          type: array
+          items:
+            type: object
+            required: [date, count]
+            properties:
+              date: { type: string, description: "YYYY-MM-DD (UTC)" }
+              count: { type: integer }
+
+    AnalyticsFunnel:
+      type: object
+      required: [steps]
+      properties:
+        steps:
+          type: array
+          items:
+            type: object
+            required: [step, count]
+            properties:
+              step: { type: string }
+              count: { type: integer }
+
+    Observability:
+      type: object
+      required: [uptime_seconds, requests_total, error_rate, latency_ms, store, components]
+      properties:
+        uptime_seconds: { type: integer }
+        requests_total: { type: integer }
+        error_rate: { type: number, format: float }
+        latency_ms:
+          type: object
+          properties:
+            p50: { type: number, format: float }
+            p95: { type: number, format: float }
+        store:
+          type: object
+          properties:
+            available: { type: boolean }
+            event_count: { type: integer }
+        components:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string }
+              name: { type: string }
+              scan_status: { type: string, enum: [pass, warn, fail, none] }
+        prometheus_query_url:
+          type: string
+          description: Present only when an optional external Prometheus query URL is configured.
+
+    FeedbackList:
+      type: object
+      required: [items, count]
+      properties:
+        count: { type: integer }
+        items:
+          type: array
+          items:
+            type: object
+            required: [rating, category, text, ts]
+            properties:
+              rating: { type: integer }
+              category: { type: string }
+              text: { type: string }
+              ts: { type: string, format: date-time }
+
+    FeedbackSummary:
+      type: object
+      required: [enabled, summary, generated_at]
+      properties:
+        enabled:
+          type: boolean
+          description: false when the flag is off or no provider is configured (no LLM dependency).
+        summary: { type: string }
+        generated_at: { type: string }
+
+    ClaimRequest:
+      type: object
+      additionalProperties: false
+      required: [install_id, user]
+      properties:
+        install_id:
+          type: string
+          description: The pseudonymous machine install id the user copied from `fdh telemetry claim`.
+        user:
+          type: string
+          description: The signed-in user's own email (the BFF passes the session user's email).
+
+    Activity:
+      type: object
+      required: [installs]
+      properties:
+        installs:
+          type: array
+          items:
+            type: object
+            required: [kind, name, version, ts]
+            properties:
+              kind: { type: string }
+              name: { type: string }
+              version: { type: string }
+              ts: { type: string, format: date-time }
 
     # --- Wire-protocol schemas ---
     WireIndex:

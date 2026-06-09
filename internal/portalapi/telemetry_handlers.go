@@ -88,16 +88,26 @@ func (s *Server) handlePostTelemetry(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Strict decode failure (unknown field, bad enum, oversize, malformed) →
 		// 400 invalid_event. Nothing is stored.
+		if s.metrics != nil {
+			s.metrics.recordIngest("unknown", "", "", "rejected")
+		}
 		s.writeError(w, http.StatusBadRequest, "invalid_event", err.Error())
 		return
 	}
 
 	// Best-effort persist. On a degraded/unavailable store the write drops and
 	// we STILL return 202 — ingest must never block or fail a client.
+	result := "accepted"
 	if s.telemetry != nil {
 		if err := s.telemetry.Insert(r.Context(), ev); err != nil {
 			s.logger.Debug("telemetry ingest dropped (store outage)", "err", err)
+			result = "dropped"
 		}
+	}
+	// Business metrics (task 6.1): coarse, non-identifying labels only — never
+	// the install_id. Feeds /metrics and the observability surface.
+	if s.metrics != nil {
+		s.metrics.recordIngest(ev.Event, ev.Kind, ev.Name, result)
 	}
 
 	s.writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true})
