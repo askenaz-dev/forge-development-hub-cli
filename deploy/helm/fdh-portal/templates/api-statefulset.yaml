@@ -63,6 +63,20 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.observability.otel.endpoint | quote }}
             {{- end }}
+            {{- if .Values.telemetry.store.enabled }}
+            # Usage-telemetry store DSN (hub-usage-telemetry Phase 2). Sourced
+            # from the chart-managed (or operator-supplied) telemetry Secret.
+            # ADDITIVE + GUARDED: present only when telemetry.store.enabled. The
+            # API treats this as STRICTLY OPTIONAL — if the var is absent or the
+            # store is unreachable, boot still succeeds and anonymous catalog
+            # reads are unaffected (portal-runtime-resilience); ingest degrades
+            # to a best-effort drop.
+            - name: FDH_TELEMETRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fdh-portal.telemetry.secretName" . }}
+                  key: FDH_TELEMETRY_DSN
+            {{- end }}
           volumeMounts:
             - name: role-map
               mountPath: /config

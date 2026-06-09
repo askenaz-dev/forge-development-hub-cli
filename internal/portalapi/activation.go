@@ -3,19 +3,21 @@ package portalapi
 import (
 	"encoding/json"
 	"net/http"
-	"sync"
 	"time"
+
+	"github.com/forge/fdh/internal/portalapi/telemetry"
 )
 
 // ActivationEvent records one wizard step completion/skip. Events flow:
-// the frontend POSTs them as the user moves through the onboarding flow;
-// the Go API holds the most recent N in an in-memory ring buffer; admins
-// can read the buffer via /api/v1/admin/activation.
+// the onboarding wizard's browser shim POSTs them as the user moves through
+// the flow; the Go API now PERSISTS them in the shared telemetry store as
+// event=activation (capability hub-usage-telemetry, design D2). Admins read
+// the recent events back via GET /api/v1/admin/activation.
 //
-// Persistent storage and analytics ingestion are not in scope for the
-// dev-portal change — the structured log lines (with `event=activation`)
-// are the durable record. The in-memory buffer is for debugging during
-// the pilot.
+// This struct is the wire shape of the admin GET response; it is preserved
+// verbatim so the admin contract is unchanged. The durable record is the
+// telemetry store row — the in-memory ring buffer was removed (D2/4.3): events
+// now survive a restart.
 type ActivationEvent struct {
 	Time            time.Time `json:"time"`
 	Event           string    `json:"event"`
@@ -26,50 +28,8 @@ type ActivationEvent struct {
 	OS              string    `json:"os,omitempty"`
 }
 
-// activationRing is a fixed-capacity ring buffer of activation events.
-// New events overwrite the oldest when full.
-type activationRing struct {
-	mu     sync.Mutex
-	events []ActivationEvent
-	max    int
-	cursor int
-	full   bool
-}
-
-func newActivationRing(max int) *activationRing {
-	if max < 16 {
-		max = 16
-	}
-	return &activationRing{events: make([]ActivationEvent, max), max: max}
-}
-
-func (r *activationRing) push(e ActivationEvent) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.events[r.cursor] = e
-	r.cursor = (r.cursor + 1) % r.max
-	if r.cursor == 0 {
-		r.full = true
-	}
-}
-
-// snapshot returns the buffer's contents in chronological order
-// (oldest first).
-func (r *activationRing) snapshot() []ActivationEvent {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if !r.full {
-		out := make([]ActivationEvent, r.cursor)
-		copy(out, r.events[:r.cursor])
-		return out
-	}
-	out := make([]ActivationEvent, 0, r.max)
-	out = append(out, r.events[r.cursor:]...)
-	out = append(out, r.events[:r.cursor]...)
-	return out
-}
-
 // activationRequest is the wire shape accepted by POST /api/v1/activation.
+// UNCHANGED — the anonymous browser-shim contract is preserved exactly.
 type activationRequest struct {
 	Step            string `json:"step"`
 	WizardSessionID string `json:"wizard_session_id"`
@@ -77,8 +37,16 @@ type activationRequest struct {
 	OS              string `json:"os,omitempty"`
 }
 
-// handlePostActivation records one event. Anonymous users may submit
-// events because the wizard runs pre-auth.
+// handlePostActivation records one onboarding event. Anonymous users may submit
+// events because the wizard runs pre-auth (contract preserved). The event is
+// folded into the shared telemetry store as event=activation; on a store
+// outage the write best-effort drops and the request still succeeds, mirroring
+// the anonymous ingest contract (design D2). The activation request shape and
+// the {"recorded":true} response are unchanged.
+//
+// NOTE: per design D4 the persisted activation row carries NO user identity —
+// the authenticated user's sub is logged for operability but never written to
+// the store, so activation telemetry stays pseudonymous like every other event.
 func (s *Server) handlePostActivation(w http.ResponseWriter, r *http.Request) {
 	var req activationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -91,29 +59,37 @@ func (s *Server) handlePostActivation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := userFromRequest(r)
-	event := ActivationEvent{
-		Time:            time.Now().UTC(),
-		Event:           "activation",
-		Step:            req.Step,
-		WizardSessionID: req.WizardSessionID,
-		UserID:          u.Sub,
-		Locale:          req.Locale,
-		OS:              req.OS,
+	now := time.Now().UTC()
+
+	// Persist as a telemetry event=activation. Best-effort: a store outage must
+	// not fail the anonymous onboarding POST.
+	if s.telemetry != nil {
+		ev := telemetry.Event{
+			Event:           "activation",
+			Step:            req.Step,
+			WizardSessionID: req.WizardSessionID,
+			Locale:          req.Locale,
+			OS:              req.OS,
+			Timestamp:       now,
+		}
+		if err := s.telemetry.Insert(r.Context(), ev); err != nil {
+			s.logger.Debug("activation persist dropped (store outage)", "err", err)
+		}
 	}
-	if s.activation != nil {
-		s.activation.push(event)
-	}
+
 	s.logger.Info("activation",
-		"step", event.Step,
-		"wizard_session_id", event.WizardSessionID,
-		"user_id", event.UserID,
-		"locale", event.Locale,
-		"os", event.OS,
+		"step", req.Step,
+		"wizard_session_id", req.WizardSessionID,
+		"user_id", u.Sub,
+		"locale", req.Locale,
+		"os", req.OS,
 	)
 	s.writeJSON(w, http.StatusOK, map[string]any{"recorded": true})
 }
 
-// handleGetActivation returns recent activation events. Admin-only.
+// handleGetActivation returns recent activation events from the store. Admin-only
+// (gated exactly as before). On a store outage it returns a typed
+// store_unavailable with Retry-After rather than a 500 (portal-runtime-resilience).
 func (s *Server) handleGetActivation(w http.ResponseWriter, r *http.Request) {
 	u := userFromRequest(r)
 	if !hasMinRole(u.Role, "admin") {
@@ -121,10 +97,30 @@ func (s *Server) handleGetActivation(w http.ResponseWriter, r *http.Request) {
 			"role 'admin' required")
 		return
 	}
+
 	events := []ActivationEvent{}
-	if s.activation != nil {
-		events = s.activation.snapshot()
+	if s.telemetry != nil {
+		rows, err := s.telemetry.ListActivation(r.Context(), 512)
+		if err != nil {
+			// Degraded store → retryable, not a 500.
+			w.Header().Set("Retry-After", "10")
+			s.writeError(w, http.StatusServiceUnavailable, "store_unavailable",
+				"telemetry store is temporarily unavailable; retry shortly")
+			return
+		}
+		events = make([]ActivationEvent, 0, len(rows))
+		for _, e := range rows {
+			events = append(events, ActivationEvent{
+				Time:            e.Timestamp,
+				Event:           "activation",
+				Step:            e.Step,
+				WizardSessionID: e.WizardSessionID,
+				Locale:          e.Locale,
+				OS:              e.OS,
+			})
+		}
 	}
+
 	s.writeJSON(w, http.StatusOK, map[string]any{
 		"events": events,
 		"count":  len(events),

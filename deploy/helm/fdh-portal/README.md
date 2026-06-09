@@ -45,6 +45,9 @@ See `values.yaml` for the full surface. Key knobs:
 | `observability.otel.endpoint` | `""`                                                 | OTLP collector for trace export.                         |
 | `api.persistence.size`        | `1Gi`                                                | Size of each API pod's hub-clone PVC (StatefulSet).      |
 | `api.persistence.storageClassName` | `""` (cluster default)                          | StorageClass for the API PVC; empty uses the default.    |
+| `telemetry.store.enabled`     | `false`                                              | Opt-in: render the in-cluster Postgres telemetry store + Secret and wire `FDH_TELEMETRY_DSN` into the API (NON-FATAL when unreachable). |
+| `telemetry.store.existingSecret` | `""`                                              | Use a pre-existing Secret (`POSTGRES_PASSWORD` + `FDH_TELEMETRY_DSN`), e.g. a managed-Postgres DSN; the chart then creates no Secret. |
+| `telemetry.store.persistence.size` | `2Gi`                                           | Size of the Postgres PVC (StatefulSet).                  |
 
 ## Upgrading: Deployment → StatefulSet (chart v0.2.0)
 
@@ -84,7 +87,13 @@ and refreshed its catalog. Open the portal at `https://<host>`.
 - Keycloak itself (use the existing instance at `keycloak.askenaz.dev`).
 - Prometheus / OTel collector — assumed to be running in the cluster
   (the chart only enables the ServiceMonitor + emits OTLP).
-- A database — the API is stateless apart from its per-pod hub-clone PVC
-  (a rebuildable cache of the catalog, not a datastore).
+- A database, **by default** — the API is stateless apart from its per-pod
+  hub-clone PVC (a rebuildable cache of the catalog, not a datastore). An
+  OPTIONAL in-cluster Postgres usage-telemetry store can be enabled with
+  `telemetry.store.enabled=true` (hub-usage-telemetry, Phase 2); it holds only
+  anonymous/pseudonymous TELEMETRY + USER-DATA, never catalog CONFIG, and is
+  NON-FATAL to the API at boot (an unreachable store never crashes the portal
+  nor blocks anonymous catalog reads). When the flag is off, no Postgres /
+  Secret renders and the API gets no `FDH_TELEMETRY_DSN`.
 - Code signing or supply-chain attestation — see the `ops-readiness`
   change for that work.

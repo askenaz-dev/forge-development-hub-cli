@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/forge/fdh/internal/portalapi/auth"
+	"github.com/forge/fdh/internal/portalapi/telemetry"
 	"github.com/forge/fdh/pkg/registry"
 	"github.com/forge/fdh/pkg/scan"
 )
@@ -28,10 +29,21 @@ type Server struct {
 	mu       sync.Mutex
 	ready    atomic.Bool
 
-	logger     *slog.Logger
-	metrics    *metricsRegistry
-	validator  tokenValidator // nil when auth is disabled
-	activation *activationRing
+	logger    *slog.Logger
+	metrics   *metricsRegistry
+	validator tokenValidator // nil when auth is disabled
+
+	// telemetry is the persistent usage-telemetry store (capability
+	// hub-usage-telemetry). It is OPTIONAL by contract: opened non-fatally in
+	// New() and always non-nil (a degraded noop when the DSN is empty or
+	// Postgres is unreachable). It replaces the ephemeral activationRing —
+	// onboarding activation events now persist here and survive restarts.
+	telemetry telemetry.Store
+
+	// ingestLimiter rate-limits the anonymous POST /api/v1/telemetry endpoint
+	// (design D2). Process-local fixed-window counter keyed by an ephemeral
+	// client IP that is NEVER persisted.
+	ingestLimiter *ingestLimiter
 
 	// scanCache memoizes the fdh-scan verdict per component bundle, keyed by
 	// canonical content hash so an unchanged bundle is scanned once across
@@ -91,14 +103,32 @@ func New(cfg Config, build BuildInfo) (*Server, error) {
 		validator = lv
 	}
 
+	// Open the telemetry store NON-FATALLY (capability hub-usage-telemetry D1,
+	// portal-runtime-resilience). An empty DSN or an unreachable Postgres yields
+	// a degraded noop store (Available()==false) so the anonymous catalog and
+	// the rest of the portal come up regardless. Open never returns a fatal
+	// error for connectivity faults; we treat even an unexpected error as
+	// non-fatal and proceed with whatever it returned (never nil).
+	store, err := telemetry.Open(context.Background(), cfg.TelemetryDSN, slog.Default())
+	if err != nil {
+		slog.Default().Warn("telemetry store open returned an error; "+
+			"continuing without persistence (catalog unaffected)", "err", err)
+	}
+	if store == nil {
+		store, _ = telemetry.Open(context.Background(), "", slog.Default())
+	}
+
 	return &Server{
-		cfg:        cfg,
-		build:      build,
-		logger:     slog.Default(),
-		metrics:    newMetrics(),
-		validator:  validator,
-		activation: newActivationRing(512),
-		scanCache:  make(map[string]string),
+		cfg:       cfg,
+		build:     build,
+		logger:    slog.Default(),
+		metrics:   newMetrics(),
+		validator: validator,
+		telemetry: store,
+		// 600 events / minute / client IP: generous for legitimate batched CLI
+		// emit, tight enough to blunt anonymous abuse.
+		ingestLimiter: newIngestLimiter(time.Minute, 600),
+		scanCache:     make(map[string]string),
 	}, nil
 }
 
@@ -177,6 +207,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/refresh", s.handleRefresh)
 	mux.HandleFunc("POST /api/v1/activation", s.handlePostActivation)
 	mux.HandleFunc("GET /api/v1/admin/activation", s.handleGetActivation)
+	// Anonymous telemetry ingest (capability hub-usage-telemetry, design D2):
+	// no auth, strict-decoded, size-capped, rate-limited; 202/400/best-effort-drop.
+	mux.HandleFunc("POST /api/v1/telemetry", s.handlePostTelemetry)
 	// Internal BFF surface (NOT in openapi.yaml): the DERIVED contribution graph
 	// (capability portal-admin-surface, decision D4). Admin-gated exactly like
 	// /api/v1/admin/activation; the web's server-only BFF calls it with the
@@ -275,6 +308,15 @@ func (s *Server) Refresh(ctx context.Context) error {
 // no read has succeeded yet.
 func (s *Server) Snapshot() *snapshot {
 	return s.snapshot.Load()
+}
+
+// Close releases the server's external resources (the telemetry store pool).
+// Safe to call on a degraded/noop store. Catalog serving does not depend on it.
+func (s *Server) Close() error {
+	if s.telemetry != nil {
+		return s.telemetry.Close()
+	}
+	return nil
 }
 
 // scanStatusFor returns the fdh-scan verdict (pass|warn|fail) for a component

@@ -317,10 +317,23 @@ func runInstall(cmd *cobra.Command, args []string, info BuildInfo) error {
 		GitignoreUpdated: gitignoreUpdated,
 	}
 
+	// Best-effort, opt-in usage telemetry. No-op unless the user opted in;
+	// never affects this command's exit code or latency (failures swallowed).
+	emitInstallTelemetry(cmd, managed.KindSkill, result)
+
 	if outputMode(cmd) == "json" {
 		return emitJSON(cmd.OutOrStdout(), result)
 	}
 	return printInstallTable(cmd.OutOrStdout(), result)
+}
+
+// emitInstallTelemetry sends a best-effort `install` event derived from the
+// InstallResult. It is a no-op when telemetry is OFF. Kept here so both the
+// skill and non-skill install paths emit identically.
+func emitInstallTelemetry(cmd *cobra.Command, kind string, r InstallResult) {
+	ts := newTelemetrySession(cmd)
+	ts.emit("install", kind, r.Namespace, r.Name, r.Version, r.ContentHash, r.Scope, r.Registry)
+	ts.flush(cmd.Context())
 }
 
 // collectManagedPathsForGitignore returns the paths under projectRoot
@@ -664,6 +677,10 @@ func installNonSkillRef(
 		MarkerFilename:   managed.Filename,
 		GitignoreUpdated: gitignoreUpdated,
 	}
+
+	// Best-effort, opt-in usage telemetry (no-op unless opted in).
+	emitInstallTelemetry(cmd, kind, result)
+
 	if outputMode(cmd) == "json" {
 		return emitJSON(cmd.OutOrStdout(), result)
 	}
