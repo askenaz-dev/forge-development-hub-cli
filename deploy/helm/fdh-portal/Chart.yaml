@@ -18,7 +18,7 @@ type: application
 # orphan-delete + StatefulSet recreate, performed while on 0.2.0. 0.2.1 is the
 # first version bumped in-place under the new scheme. See the rationale in
 # templates/api-statefulset.yaml.)
-version: 0.2.2
+version: 0.2.3
 appVersion: "0.1.0"
 keywords:
   - fdh

@@ -17,12 +17,19 @@ import {
   type ActivationEvent,
 } from "@/lib/api";
 import { getServiceToken } from "@/lib/bff";
+import { resolvePortalRole, hasMinRole } from "@/lib/roles";
 import { RefreshControl } from "./refresh-control";
 import {
   AnalyticsPanel,
   ObservabilityPanel,
   FeedbackPanel,
 } from "./telemetry-panels";
+import {
+  ImportPanel,
+  HarnessPanel,
+  CuratePanel,
+  type CatalogRef,
+} from "./gitops-panels";
 
 /**
  * /admin — the portal operations console. Auth-gated, then coarse-gated to the
@@ -62,10 +69,18 @@ export default async function AdminPage({
   const t = await getTranslations("admin");
 
   const groups: string[] = session.user?.groups ?? [];
-  // Coarse advisory gate at the page level. The Go API still enforces the role
-  // on every privileged call; a non-admin reaching here triggers NO such call.
-  const isAdmin = groups.includes("fdh-admins");
-  if (!isAdmin) {
+  // Resolve the viewer's portal role (advisory UX-gating). Every privileged call
+  // below is ALSO enforced server-side by the Go API against a validated service
+  // token; a non-admin reaching here triggers NO admin-only call.
+  const role = resolvePortalRole(groups);
+  const isAdmin = hasMinRole(role, "admin");
+  // The Phase-3 GitOps write surface is reachable per-role: import is author+,
+  // harness edit is publisher+, curate is admin. The Phase-1/2 ops console
+  // (catalog stats, activation, refresh, telemetry) stays admin-only.
+  const canContribute = hasMinRole(role, "author");
+
+  // A consumer (or unmapped) viewer sees neither surface.
+  if (!isAdmin && !canContribute) {
     return (
       <div className="container py-12">
         <h1 className="text-3xl font-bold tracking-tight">{t("gatedTitle")}</h1>
@@ -74,6 +89,31 @@ export default async function AdminPage({
             group: () => <code>fdh-admins</code>,
           })}
         </p>
+      </div>
+    );
+  }
+
+  // An author/publisher who is NOT an admin sees ONLY the GitOps contribution
+  // surface — never the admin-only ops console (which would 403 on every call).
+  if (!isAdmin) {
+    const catalog = await listComponents({ limit: 200 }, { revalidate: 30 }).catch(
+      () => ({ items: [] as ComponentSummary[], next_cursor: null })
+    );
+    const catalogRefs: CatalogRef[] = catalog.items.map((c) => ({
+      kind: c.kind,
+      name: c.name,
+    }));
+    return (
+      <div className="container py-12">
+        <h1 className="text-3xl font-bold tracking-tight">{t("contributeTitle")}</h1>
+        <p className="mt-2 max-w-3xl text-muted-foreground">
+          {t("contributeIntro")}
+        </p>
+        <GitopsSurface
+          role={role}
+          catalog={catalogRefs}
+          t={t}
+        />
       </div>
     );
   }
@@ -310,7 +350,131 @@ export default async function AdminPage({
       <AnalyticsPanel />
       <ObservabilityPanel />
       <FeedbackPanel />
+
+      {/* --- Phase-3 GitOps write surface (capability portal-gitops-write) ---
+          Role-gated CONFIG-via-PR panels. Each posts to a same-origin BFF route
+          that re-checks the role and forwards to the Go API with the service
+          credential; the bot opens but never merges. The admin sees all three
+          panels (import/harness/curate); the panels are also gated by `role`. */}
+      <GitopsSurface
+        role={role}
+        catalog={components.map((c) => ({ kind: c.kind, name: c.name }))}
+        t={t}
+      />
     </div>
+  );
+}
+
+/**
+ * GitopsSurface renders the role-appropriate subset of the three Phase-3 write
+ * panels, gated by the viewer's resolved `role` (advisory UX-gating; the BFF and
+ * Go API re-enforce the minimum role on every call). Import is author+, harness
+ * is publisher+, curate is admin. Labels are resolved here (server-side) from the
+ * `admin` namespace and handed to the client islands as plain strings.
+ */
+function GitopsSurface({
+  role,
+  catalog,
+  t,
+}: {
+  role: ReturnType<typeof resolvePortalRole>;
+  catalog: CatalogRef[];
+  // The translator returned by getTranslations("admin").
+  t: Awaited<ReturnType<typeof getTranslations<"admin">>>;
+}) {
+  const common = {
+    proposeNotice: t("gitopsProposeNotice"),
+    submit: t("gitopsSubmit"),
+    pending: t("gitopsPending"),
+    prOpenedTemplate: t("gitopsPrOpened", { url: "{url}" }),
+    alreadyOpenTemplate: t("gitopsAlreadyOpen", { url: "{url}" }),
+    notConfigured: t("gitopsNotConfigured"),
+    forbidden: t("gitopsForbidden"),
+    failureTemplate: t("gitopsFailure", { detail: "{detail}" }),
+    viewPr: t("gitopsViewPr"),
+  };
+
+  return (
+    <section className="mt-12 space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight">
+          {t("gitopsSectionTitle")}
+        </h2>
+        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+          {t("gitopsSectionIntro")}
+        </p>
+      </div>
+
+      {hasMinRole(role, "author") && (
+        <ImportPanel
+          common={common}
+          labels={{
+            title: t("importTitle"),
+            description: t("importDescription"),
+            nameLabel: t("importNameLabel"),
+            namePlaceholder: t("importNamePlaceholder"),
+            descLabel: t("importDescLabel"),
+            descPlaceholder: t("importDescPlaceholder"),
+            ownerTeamLabel: t("importOwnerTeamLabel"),
+            ownerTeamPlaceholder: t("importOwnerTeamPlaceholder"),
+            agentsLabel: t("importAgentsLabel"),
+            agentsHint: t("importAgentsHint"),
+            zipLabel: t("importZipLabel"),
+            zipHint: t("importZipHint"),
+            modeForm: t("importModeForm"),
+            modeZip: t("importModeZip"),
+            nameRequired: t("importNameRequired"),
+            zipRequired: t("importZipRequired"),
+          }}
+        />
+      )}
+
+      {hasMinRole(role, "publisher") && (
+        <HarnessPanel
+          common={common}
+          catalog={catalog}
+          labels={{
+            title: t("harnessTitle"),
+            description: t("harnessDescription"),
+            harnessLabel: t("harnessNameLabel"),
+            harnessPlaceholder: t("harnessNamePlaceholder"),
+            ownerTeamLabel: t("harnessOwnerTeamLabel"),
+            descLabel: t("harnessDescLabel"),
+            addHeading: t("harnessAdd"),
+            removeHeading: t("harnessRemove"),
+            emptyCatalog: t("harnessEmptyCatalog"),
+            noChanges: t("harnessNoChanges"),
+            unknownComponentTemplate: t("harnessUnknownComponent", {
+              kind: "{kind}",
+              name: "{name}",
+            }),
+          }}
+        />
+      )}
+
+      {hasMinRole(role, "admin") && (
+        <CuratePanel
+          common={common}
+          catalog={catalog}
+          labels={{
+            title: t("curateTitle"),
+            description: t("curateDescription"),
+            componentLabel: t("curateComponentLabel"),
+            componentPlaceholder: t("curateComponentPlaceholder"),
+            actionLabel: t("curateActionLabel"),
+            actionSetDefaultTrue: t("curateSetDefaultTrue"),
+            actionSetDefaultFalse: t("curateSetDefaultFalse"),
+            actionDeprecate: t("curateDeprecate"),
+            actionYank: t("curateYank"),
+            versionLabel: t("curateVersionLabel"),
+            versionPlaceholder: t("curateVersionPlaceholder"),
+            versionRequired: t("curateVersionRequired"),
+            noUnyankNote: t("curateNoUnyank"),
+            componentRequired: t("curateComponentRequired"),
+          }}
+        />
+      )}
+    </section>
   );
 }
 

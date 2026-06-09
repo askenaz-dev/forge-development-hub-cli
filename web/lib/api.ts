@@ -764,3 +764,250 @@ export async function claimInstall(
   }
   return { ok: true };
 }
+
+// ============================================================================
+// Phase-3 GitOps write surface (capability portal-gitops-write)
+// ----------------------------------------------------------------------------
+// SERVER-ONLY, service-token authenticated callers for the three role-gated
+// CONFIG-via-PR write endpoints. Each opens EXACTLY one pull request on
+// forge-development-hub through the portal-owned GitHub App ("the bot"). The bot
+// can OPEN but can NEVER MERGE — a human merges under branch protection (there
+// is no merge path in the API).
+//
+// Trust spine mirrored here:
+//   - The Bearer is the Phase-1 BFF SERVICE CREDENTIAL (getServiceToken()), NOT
+//     a user IdP bearer (the web strips it from the session cookie; see auth.ts).
+//   - The requesting user's identity rides along as TRUSTED METADATA in the
+//     `X-Forge-User` / `X-Forge-User-Email` headers (set server-side from the
+//     verified session — never client free-text used for authorization). The Go
+//     handler (`gitops_handlers.go` requestorFor) reads exactly those headers
+//     for PR attribution; authorization there depends ONLY on the role gate.
+//
+// Like the Stage-2 reads, these DO NOT throw on the EXPECTED, recoverable typed
+// outcomes — they fold them into a discriminated `GitopsResult`:
+//   - 503 gitops_not_configured → { ok:false, gitopsDisabled:true }   (calm notice)
+//   - 200 already_open          → { ok:false, alreadyOpen:true, url }  (idempotency)
+//   - 403 forbidden             → { ok:false, forbidden:true, message }
+//   - 422 validation/name/lifecycle/unknown_component → { ok:false, validation:true, code, message }
+// A genuine transport/auth/5xx failure still throws `ApiError` for the caller's
+// try/catch.
+
+/** The typed 503 code the Go API returns when the GitHub App is not configured. */
+export const GITOPS_NOT_CONFIGURED = "gitops_not_configured";
+
+/**
+ * The success body every GitOps write endpoint returns (openapi `GitopsPRResult`).
+ * `merged` is always false (the bot is propose-only).
+ */
+export interface GitopsPRResult {
+  pr_url: string;
+  branch: string;
+  already_open: boolean;
+  merged: false;
+}
+
+/**
+ * Discriminated result of a GitOps write action. The web surfaces each variant
+ * distinctly:
+ *   - ok                — a PR was freshly opened (201). `url` is the new PR.
+ *   - alreadyOpen       — an open PR for this deterministic branch already
+ *                         existed (200, idempotency D7). `url` is that PR.
+ *   - gitopsDisabled    — the GitHub App is not configured (503). A calm
+ *                         "not configured yet" notice, NOT an error — the surface
+ *                         ships dark and lights up when the secret is wired.
+ *   - forbidden         — the API re-enforced the role gate and refused (403).
+ *   - validation        — a pre-PR check failed (422): bundle/scan/portability,
+ *                         a name collision, a rejected lifecycle, or an unknown
+ *                         harness component. `code` is the Go error code; the
+ *                         `message` names the failing check.
+ * Any OTHER failure throws `ApiError`.
+ */
+export type GitopsResult =
+  | { ok: true; url: string; branch: string }
+  | { ok: false; alreadyOpen: true; url: string; branch: string }
+  | { ok: false; gitopsDisabled: true; retryAfter?: number }
+  | { ok: false; forbidden: true; message: string }
+  | { ok: false; validation: true; code: string; message: string };
+
+/** Parse the Go `{error, message}` envelope; tolerant of a non-JSON body. */
+function parseErrorEnvelope(body: string): { code: string; message: string } {
+  try {
+    const j = JSON.parse(body) as { error?: string; message?: string };
+    return { code: j.error ?? "", message: j.message ?? body };
+  } catch {
+    return { code: "", message: body };
+  }
+}
+
+/**
+ * Map a GitOps write Response into the discriminated `GitopsResult`, folding the
+ * expected typed outcomes (503/403/422/200-already-open) and throwing `ApiError`
+ * for anything genuinely unexpected. Shared by all three write callers so their
+ * outcome handling is identical and exhaustive.
+ */
+async function gitopsResultFrom(res: Response): Promise<GitopsResult> {
+  if (res.status === 503) {
+    const body = await safeText(res);
+    if (body.includes(GITOPS_NOT_CONFIGURED)) {
+      return { ok: false, gitopsDisabled: true, retryAfter: parseRetryAfter(res) };
+    }
+    throw new ApiError(res.status, body);
+  }
+  if (res.status === 403) {
+    const { message } = parseErrorEnvelope(await safeText(res));
+    return { ok: false, forbidden: true, message };
+  }
+  if (res.status === 422) {
+    const { code, message } = parseErrorEnvelope(await safeText(res));
+    return { ok: false, validation: true, code, message };
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status, await safeText(res));
+  }
+  const data = (await res.json()) as GitopsPRResult;
+  if (data.already_open) {
+    return { ok: false, alreadyOpen: true, url: data.pr_url, branch: data.branch };
+  }
+  return { ok: true, url: data.pr_url, branch: data.branch };
+}
+
+/** Trusted-attribution metadata for a write action, taken from the session. */
+export interface Requestor {
+  /** Server-verified display name (session.user.name / preferredUsername). */
+  name?: string | null;
+  /** Server-verified email (session.user.email). */
+  email?: string | null;
+  /**
+   * Server-verified portal role the BFF resolved from session.user.groups. The
+   * Go API uses this (X-Forge-User-Role) as the AUTHORITATIVE per-user gate —
+   * the service credential the request authenticates with always maps to admin,
+   * so the forwarded user role is what actually differentiates author/publisher/
+   * admin server-side (design D8). It is also the role credited in the PR body.
+   */
+  role?: string | null;
+}
+
+/** Build the trusted X-Forge-User headers the Go handler reads (attribution + the authoritative per-user role gate). */
+function requestorHeaders(req?: Requestor): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (req?.name) h["X-Forge-User"] = req.name;
+  if (req?.email) h["X-Forge-User-Email"] = req.email;
+  if (req?.role) h["X-Forge-User-Role"] = req.role;
+  return h;
+}
+
+/** JSON skill-form import payload (mirrors openapi `GitopsImportForm`). */
+export interface ImportFormPayload {
+  kind: "skill";
+  name: string;
+  description?: string;
+  owner_team?: string;
+  agents?: string[];
+  files?: Record<string, string>;
+}
+
+/**
+ * importComponent — POST /api/v1/gitops/import (author+). Two shapes:
+ *   - a `FormData` (a multipart zip upload: fields kind/name/owner_team/agents +
+ *     a `bundle` file), forwarded verbatim with the multipart boundary intact, OR
+ *   - an `ImportFormPayload` JSON skill-form.
+ * The bot validates server-side (bundle/scan/portability) and ABORTS before any
+ * push on failure → a `validation` result naming the failing check.
+ */
+export async function importComponent(
+  payload: FormData | ImportFormPayload,
+  opts: { serviceToken: string; requestor?: Requestor; signal?: AbortSignal }
+): Promise<GitopsResult> {
+  const isMultipart = typeof FormData !== "undefined" && payload instanceof FormData;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${opts.serviceToken}`,
+    ...requestorHeaders(opts.requestor),
+  };
+  // For multipart we MUST NOT set Content-Type ourselves — fetch derives it with
+  // the boundary from the FormData body. For JSON we set it explicitly.
+  if (!isMultipart) headers["Content-Type"] = "application/json";
+
+  const res = await fetch(`${BASE}/api/v1/gitops/import`, {
+    method: "POST",
+    headers,
+    body: isMultipart ? (payload as FormData) : JSON.stringify(payload),
+    signal: opts.signal,
+    cache: "no-store",
+  });
+  return gitopsResultFrom(res);
+}
+
+/** Harness-edit payload (mirrors openapi `GitopsHarnessRequest`). */
+export interface HarnessEditPayload {
+  harness: string;
+  description?: string;
+  owner_team?: string;
+  add_skills?: string[];
+  remove_skills?: string[];
+  add_rules?: string[];
+  remove_rules?: string[];
+  add_agents?: string[];
+  remove_agents?: string[];
+  add_hooks?: string[];
+  remove_hooks?: string[];
+}
+
+/**
+ * editHarness — POST /api/v1/gitops/harness (publisher+). The bot opens a PR
+ * touching only hub/harnesses.yaml. An ADDED component that is not in the live
+ * catalog is rejected (422 unknown_component) before composing → a `validation`
+ * result naming it.
+ */
+export async function editHarness(
+  payload: HarnessEditPayload,
+  opts: { serviceToken: string; requestor?: Requestor; signal?: AbortSignal }
+): Promise<GitopsResult> {
+  const res = await fetch(`${BASE}/api/v1/gitops/harness`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${opts.serviceToken}`,
+      "Content-Type": "application/json",
+      ...requestorHeaders(opts.requestor),
+    },
+    body: JSON.stringify(payload),
+    signal: opts.signal,
+    cache: "no-store",
+  });
+  return gitopsResultFrom(res);
+}
+
+/** Curate payload (mirrors openapi `GitopsCurateRequest`). */
+export interface CuratePayload {
+  kind: "skill" | "rule" | "agent" | "hook";
+  name: string;
+  /** Gate-3 default flag; the same PR syncs the `default` harness atomically. */
+  set_default?: boolean;
+  /** Forward-only lifecycle transition; un-yank is rejected (422). */
+  lifecycle?: "deprecate" | "yank";
+  /** Target version (required for a lifecycle transition). */
+  version?: string;
+}
+
+/**
+ * curate — POST /api/v1/gitops/curate (admin). The bot opens a PR editing
+ * hub/registry.yaml (and, for a default flip, the `default` harness in the SAME
+ * atomic commit). A rejected lifecycle (e.g. un-yank) returns 422 → a
+ * `validation` result; no PR is created.
+ */
+export async function curate(
+  payload: CuratePayload,
+  opts: { serviceToken: string; requestor?: Requestor; signal?: AbortSignal }
+): Promise<GitopsResult> {
+  const res = await fetch(`${BASE}/api/v1/gitops/curate`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${opts.serviceToken}`,
+      "Content-Type": "application/json",
+      ...requestorHeaders(opts.requestor),
+    },
+    body: JSON.stringify(payload),
+    signal: opts.signal,
+    cache: "no-store",
+  });
+  return gitopsResultFrom(res);
+}

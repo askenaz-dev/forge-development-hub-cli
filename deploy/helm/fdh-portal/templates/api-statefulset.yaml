@@ -77,6 +77,40 @@ spec:
                   name: {{ include "fdh-portal.telemetry.secretName" . }}
                   key: FDH_TELEMETRY_DSN
             {{- end }}
+            {{- if .Values.gitops.enabled }}
+            # Web → Git CONFIG write surface (portal-gitops-write Phase 3). The
+            # GitHub App ("the bot") credential. ADDITIVE + GUARDED: present only
+            # when gitops.enabled. SHIPS DARK / NON-FATAL — with the flag off none
+            # of this is set, the gitops client is DISABLED, the API still boots
+            # and serves reads, and write endpoints return 503 gitops_not_configured
+            # (portal-runtime-resilience). The id + installation id + private key
+            # come from the gitops Secret (existing or chart-managed); owner/repo/
+            # apiBaseURL are non-secret. Env var names match the Go API's
+            # ConfigFromEnv (internal/portalapi/gitops/github_client.go).
+            - name: GITHUB_HUB_OWNER
+              value: {{ .Values.gitops.hub.owner | quote }}
+            - name: GITHUB_HUB_REPO
+              value: {{ .Values.gitops.hub.repo | quote }}
+            {{- if .Values.gitops.apiBaseURL }}
+            - name: GITHUB_API_BASE_URL
+              value: {{ .Values.gitops.apiBaseURL | quote }}
+            {{- end }}
+            - name: GITHUB_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fdh-portal.gitops.secretName" . }}
+                  key: {{ .Values.gitops.secretKeys.appId }}
+            - name: GITHUB_APP_INSTALLATION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fdh-portal.gitops.secretName" . }}
+                  key: {{ .Values.gitops.secretKeys.installationID }}
+            - name: GITHUB_APP_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fdh-portal.gitops.secretName" . }}
+                  key: {{ .Values.gitops.secretKeys.privateKey }}
+            {{- end }}
           volumeMounts:
             - name: role-map
               mountPath: /config
