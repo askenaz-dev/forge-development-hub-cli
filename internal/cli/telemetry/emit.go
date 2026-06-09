@@ -19,7 +19,7 @@ const maxQueued = 64
 
 // Emitter batches telemetry events and flushes them best-effort, async, and
 // time-boxed. Construction is cheap and side-effect-free; nothing is sent
-// unless Enabled is true AND Flush is called. The zero behaviour (disabled)
+// unless Enabled is true AND Flush is called. The zero behavior (disabled)
 // makes the whole subsystem a no-op.
 //
 // Usage pattern (short-lived CLI):
@@ -67,7 +67,7 @@ func (e *Emitter) Enqueue(ev Event) {
 }
 
 // flushOnce drains the queue and POSTs each event to the ingest endpoint,
-// strictly within ctx. ALL errors (network, non-2xx, marshalling) are
+// strictly within ctx. ALL errors (network, non-2xx, marshaling) are
 // swallowed: telemetry must never affect a command's outcome. Events are sent
 // individually because the wire contract is one event per request body.
 func (e *Emitter) flushOnce(ctx context.Context) {
