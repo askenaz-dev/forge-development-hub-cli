@@ -10,8 +10,10 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "i18n:check": "node scripts/check-i18n-parity.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "a11y": "playwright test --grep @a11y",
-    "ci": "pnpm typecheck && pnpm i18n:check && pnpm build"
+    "ci": "pnpm typecheck && pnpm i18n:check && pnpm test && pnpm build"
   },
   "dependencies": {
     "@radix-ui/react-dropdown-menu": "^2.1.16",
@@ -31,6 +33,7 @@
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
@@ -45,6 +48,7 @@
     "eslint-config-next": "^16.2.6",
     "postcss": "^8",
     "tailwindcss": "^3.4.19",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
   }
 }
