@@ -14,3 +14,17 @@ map:
   fdh-publishers: publisher
   fdh-reviewers: reviewer
   fdh-authors: author
+  # BFF service principal (capability portal-admin-surface, decision D1).
+  # The portal web mints a Keycloak client-credentials token from its existing
+  # confidential client; that token carries the dedicated service-account group
+  # `fdh-portal-svc`, which this entry maps to `admin` so the token satisfies
+  # hasMinRole(role, "admin") on admin-gated endpoints (activation, refresh,
+  # contributions). It is a DEDICATED group, never the human `fdh-admins`, so
+  # the service principal is auditable and distinguishable in logs.
+  #
+  # NOTE: the Keycloak `fdh-portal-svc` service-account group itself is
+  # provisioned by the org owner (awaits org owner) — adding the client's
+  # service account to that group and emitting it in the `groups` claim of the
+  # client-credentials token. This role-map entry is the code-side half; it is
+  # inert until that group is granted on the token.
+  fdh-portal-svc: admin

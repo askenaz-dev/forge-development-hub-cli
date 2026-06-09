@@ -38,6 +38,14 @@ type Server struct {
 	// refreshes and requests (capability portal-scan-status, decision D1).
 	scanMu    sync.RWMutex
 	scanCache map[string]string
+
+	// contribMu/contribCache memoize the DERIVED contribution graph
+	// (email → []Contribution) over the hub's FULL git history, keyed by the
+	// hub HEAD commit hash so a full-history walk happens at most once per hub
+	// advance (capability portal-admin-surface, decision D4). See
+	// contributions.go.
+	contribMu    sync.Mutex
+	contribCache *contributionIndex
 }
 
 type snapshot struct {
@@ -169,6 +177,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/refresh", s.handleRefresh)
 	mux.HandleFunc("POST /api/v1/activation", s.handlePostActivation)
 	mux.HandleFunc("GET /api/v1/admin/activation", s.handleGetActivation)
+	// Internal BFF surface (NOT in openapi.yaml): the DERIVED contribution graph
+	// (capability portal-admin-surface, decision D4). Admin-gated exactly like
+	// /api/v1/admin/activation; the web's server-only BFF calls it with the
+	// Keycloak client-credentials service token for the logged-in user's email.
+	mux.HandleFunc("GET /api/v1/admin/contributions", s.handleGetContributions)
 
 	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPI)
 	// API documentation UIs, namespaced under /api so the bare /docs path
