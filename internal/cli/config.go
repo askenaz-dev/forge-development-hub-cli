@@ -27,6 +27,8 @@ var SupportedConfigKeys = map[string]string{
 	"defaults.scope":                 "Default install scope when none is provided (user|project|auto)",
 	"cache.dir":                      "Override the default cache directory (used by HTTP transport)",
 	"adapters.override":              "Path to a user-provided adapters.yaml that replaces individual agents",
+	"telemetry.enabled":              "Opt in to anonymous, pseudonymous usage telemetry (true|false; default off). See 'fdh telemetry status'",
+	"telemetry.endpoint":             "Override the anonymous telemetry ingest endpoint (default: the portal API)",
 }
 
 func newConfigCmd(info BuildInfo) *cobra.Command {

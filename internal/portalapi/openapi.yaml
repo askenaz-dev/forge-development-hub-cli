@@ -131,6 +131,52 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  # --- Telemetry ingest (capability hub-usage-telemetry, design D2) ----------
+  # Anonymous: NO bearer, NO service-token. Strict-decoded (unknown fields
+  # rejected), size-capped, rate-limited. 202 accept / 400 invalid / best-effort
+  # drop on store outage (still 202). The admin analytics/observability/feedback
+  # read paths are Stage 2 and are NOT declared here yet.
+  /telemetry:
+    post:
+      operationId: ingestTelemetry
+      summary: Anonymous usage-telemetry ingest
+      description: |
+        Accepts a single pseudonymous usage event (install/download/resolve/
+        activation/feedback) into the persistent telemetry store. No identity is
+        required, accepted, or recorded; presenting a service credential confers
+        no privilege. The body is strict-decoded against the closed schema —
+        unknown fields (e.g. any PII field) are rejected with 400. When the store
+        is unavailable the event is best-effort dropped and the response is still
+        202 (ingest never blocks a client).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelemetryEvent"
+      responses:
+        "202":
+          description: Event accepted (or best-effort dropped on store outage)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: { type: boolean, enum: [true] }
+        "400":
+          description: Schema-invalid event (unknown field or bad enum)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Ingest rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # --- Component catalog (kind-aware; skills are the kind=skill view) --------
   /components:
     get:
@@ -540,6 +586,52 @@ components:
       required: [error]
       properties:
         error: { type: string }
+
+    # --- Telemetry ingest schema (capability hub-usage-telemetry) ---
+    # The CLOSED, minimal, pseudonymous event shape. additionalProperties:false
+    # mirrors the server's strict decode: any field not listed (notably any PII
+    # field — username/email/hostname/ip/path) is rejected with 400. There is
+    # intentionally NO identity field; the only id is the rotating, salted,
+    # pseudonymous install_id, which is not reversible to an identity.
+    TelemetryEvent:
+      type: object
+      additionalProperties: false
+      required: [event]
+      properties:
+        event:
+          type: string
+          enum: [install, download, resolve, activation, feedback]
+        kind: { type: string, enum: [skill, rule, agent, hook] }
+        namespace: { type: string }
+        name: { type: string }
+        version: { type: string }
+        content_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        scope: { type: string }
+        registry: { type: string }
+        os:
+          type: string
+          enum: [darwin, linux, windows]
+          description: Coarse OS family only — no arch, kernel, or version detail.
+        locale: { type: string, enum: [es, en] }
+        install_id:
+          type: string
+          description: Pseudonymous rotating salted hash; not reversible to identity.
+        timestamp: { type: string, format: date-time }
+        step:
+          type: string
+          description: Activation only — onboarding wizard step.
+        wizard_session_id:
+          type: string
+          description: Activation only — wizard session id.
+        rating:
+          type: integer
+          description: Feedback only — structured rating.
+        category:
+          type: string
+          description: Feedback only — structured category.
+        text:
+          type: string
+          description: Feedback only — free text.
 
     # --- Wire-protocol schemas ---
     WireIndex:

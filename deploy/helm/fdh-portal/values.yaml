@@ -111,6 +111,66 @@ observability:
   otel:
     endpoint: ""    # e.g. http://otel-collector.observability:4317
 
+# Usage telemetry store (hub-usage-telemetry, Phase 2).
+#
+# The portal's FIRST persistent datastore. It holds ONLY anonymous/pseudonymous
+# TELEMETRY + USER-DATA (usage events, onboarding activation, feedback) — NEVER
+# catalog CONFIG. "code = source of truth" is intact: the catalog stays the
+# Git-derived clone on the API's registry-data PVC; telemetry never writes
+# hub/registry.yaml, hub/harnesses.yaml, or any component.
+#
+# NON-FATAL BY DESIGN (portal-runtime-resilience): the API treats the store as
+# strictly optional at boot. If FDH_TELEMETRY_DSN is unset, or Postgres is
+# unreachable, the API still starts, anonymous catalog reads still serve, and
+# ingest degrades to a best-effort drop (analytics reads return a typed
+# store_unavailable). Enabling this block only makes telemetry DURABLE; it must
+# never become a hard dependency of the portal.
+#
+# Disabled by default — the operator opts in. When enabled, this chart renders
+# an in-cluster Postgres StatefulSet + headless Service + per-pod PVC and a
+# Secret carrying POSTGRES_PASSWORD and the assembled FDH_TELEMETRY_DSN, and
+# wires that DSN into the API StatefulSet env. With it disabled, NONE of those
+# render and the API gets no FDH_TELEMETRY_DSN (telemetry simply stays
+# best-effort/dropped, which is the intended off state).
+telemetry:
+  store:
+    # Master switch. false -> no Postgres, no Secret, no DSN env on the API.
+    enabled: false
+    image:
+      repository: postgres
+      tag: "16-alpine"
+      pullPolicy: IfNotPresent
+    # Logical database + role the API connects as. The bootstrap password is
+    # generated into the Secret on first render (see passwordSecret below) — or
+    # supply your own existing Secret to avoid a chart-managed password.
+    database: "fdh"
+    user: "fdh"
+    # Password handling. The chart assembles FDH_TELEMETRY_DSN as
+    #   postgres://<user>:<password>@<svc>:5432/<database>?sslmode=disable
+    # into a chart-managed Secret.
+    #   - existingSecret: "" -> the chart creates the Secret and generates a
+    #     random password on first install (preserved across upgrades via
+    #     lookup). Set `password` to pin a deterministic value instead.
+    #   - existingSecret: "my-secret" -> the chart creates NOTHING; it reads
+    #     POSTGRES_PASSWORD and FDH_TELEMETRY_DSN from that pre-existing Secret
+    #     (you own its lifecycle, e.g. a managed-Postgres DSN).
+    existingSecret: ""
+    # Optional explicit password. Empty -> a random one is generated (and kept
+    # stable across upgrades). Ignored when existingSecret is set.
+    password: ""
+    # Per-pod persistent volume for Postgres data (StatefulSet
+    # volumeClaimTemplates). RWO local-path like the API's registry PVC.
+    persistence:
+      storageClassName: ""   # empty -> cluster default StorageClass (local-path)
+      size: 2Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 1000m
+        memory: 512Mi
+
 ingress:
   enabled: true
   className: "nginx"

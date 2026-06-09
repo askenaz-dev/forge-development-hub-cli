@@ -76,6 +76,11 @@ func main() {
 	// Refresh + signal handling.
 	go srv.RunRefreshLoop(ctx)
 
+	// Telemetry aggregation + retention loop (capability hub-usage-telemetry,
+	// design D6). Mirrors the refresh loop; pauses when the store is
+	// unavailable and only runs on the elected (lowest-ordinal) replica.
+	go srv.RunTelemetryLoop(ctx)
+
 	// SIGHUP triggers an immediate refresh.
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)
@@ -101,6 +106,9 @@ func main() {
 		defer shutdownCancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			logger.Error("graceful shutdown failed", "err", err)
+		}
+		if err := srv.Close(); err != nil {
+			logger.Warn("telemetry store close failed", "err", err)
 		}
 	}()
 

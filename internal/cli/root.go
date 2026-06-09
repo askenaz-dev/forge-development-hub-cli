@@ -61,6 +61,8 @@ func newRootCmd(info BuildInfo) *cobra.Command {
 	root.AddCommand(newSwitchCmd(info))
 	root.AddCommand(newInstinctCmd(info))
 	root.AddCommand(newEvolveCmd())
+	root.AddCommand(newTelemetryCmd(info))
+	root.AddCommand(newFeedbackCmd(info))
 	for _, c := range newKindCmds(info) {
 		root.AddCommand(c)
 	}

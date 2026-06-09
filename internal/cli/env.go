@@ -16,6 +16,7 @@ var fdhEnvBindings = map[string]string{
 	"FDH_REGISTRY_HTTP_BASIC_PASS":  "registry.http.auth.basic.pass",
 	"FDH_REGISTRY_HTTP_CLIENT_CERT": "registry.http.auth.client_cert",
 	"FDH_REGISTRY_HTTP_CLIENT_KEY":  "registry.http.auth.client_key",
+	"FDH_TELEMETRY_ENDPOINT":        "telemetry.endpoint",
 }
 
 // envVar wraps os.Getenv so tests can stub the environment if they need

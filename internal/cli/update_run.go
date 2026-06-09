@@ -145,6 +145,14 @@ func runUpdate(cmd *cobra.Command, _ []string, info BuildInfo) error {
 		}
 	}
 
+	// Best-effort, opt-in usage telemetry session for the resolve events
+	// emitted below. No-op unless the user opted in.
+	ts := newTelemetrySession(cmd)
+	registryDisplay := ""
+	if rc.Registry != nil {
+		registryDisplay = rc.Registry.Source()
+	}
+
 	// Apply.
 	for _, action := range plan {
 		switch action.Action {
@@ -178,8 +186,19 @@ func runUpdate(cmd *cobra.Command, _ []string, info BuildInfo) error {
 				Skill: action.Skill, Agent: action.Agent,
 				Action: action.Action, ContentHash: res.ContentHash,
 			})
+			// A refresh resolves the component to a concrete version +
+			// content_hash — emit a best-effort `resolve` event for it.
+			ns, nm := splitSkillName(action.Skill)
+			resolvedVersion := ""
+			if entry := reg.ComponentByName(action.Skill, hubregistry.KindSkill); entry != nil {
+				resolvedVersion = entry.Version
+			}
+			ts.emit("resolve", "skill", ns, nm, resolvedVersion, res.ContentHash, "project", registryDisplay)
 		}
 	}
+
+	// Time-boxed best-effort flush; never affects this command's outcome.
+	ts.flush(ctx)
 
 	if outputMode(cmd) == "json" {
 		if err := emitJSON(cmd.OutOrStdout(), result); err != nil {
@@ -280,3 +299,13 @@ func printUpdateSummary(w io.Writer, r UpdateResult) {
 
 // newSHA256 is the in-package factory used by update_plan.go.
 func newSHA256() hash.Hash { return sha256.New() }
+
+// splitSkillName splits a "namespace/name" identifier into its parts. A bare
+// name (no slash) returns an empty namespace and the name unchanged. Used to
+// populate the telemetry event's coarse component fields.
+func splitSkillName(s string) (namespace, name string) {
+	if i := strings.Index(s, "/"); i > 0 {
+		return s[:i], s[i+1:]
+	}
+	return "", s
+}

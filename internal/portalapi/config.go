@@ -60,6 +60,24 @@ type Config struct {
 	// the wire handlers respond 503 Service Unavailable; the rest of the
 	// portal (UI endpoints, /healthz) continues to function.
 	HubPath string
+
+	// TelemetryDSN is the Postgres connection string for the shared telemetry
+	// store (capability hub-usage-telemetry, design D1). It is OPTIONAL: an
+	// empty DSN (or an unreachable store) disables persistence WITHOUT crashing
+	// boot or blocking anonymous catalog reads — ingest best-effort drops and
+	// admin reads return a typed store_unavailable (portal-runtime-resilience).
+	// Sourced from FDH_TELEMETRY_DSN (Helm injects it from a Secret).
+	TelemetryDSN string
+
+	// TelemetryRetention bounds how long raw telemetry events are kept before
+	// the in-process retention loop prunes them (aggregates are long-lived).
+	// Default 180 days (design D6). Sourced from FDH_TELEMETRY_RETENTION.
+	TelemetryRetention time.Duration
+
+	// TelemetryAggregateInterval is how often the in-process aggregation +
+	// retention loop runs on the elected (lowest-ordinal) replica. Default 1h.
+	// Sourced from FDH_TELEMETRY_AGGREGATE_INTERVAL.
+	TelemetryAggregateInterval time.Duration
 }
 
 // LoadConfig builds a Config from environment variables, applying defaults
@@ -77,6 +95,24 @@ func LoadConfig() (Config, error) {
 		IDPProfile:        envOr("FDH_PORTAL_IDP_PROFILE", "local"),
 		OTLPEndpoint:      os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 		HubPath:           envOr("FDH_PORTAL_HUB_PATH", "/srv/hub"),
+		TelemetryDSN:      os.Getenv("FDH_TELEMETRY_DSN"),
+	}
+
+	// Telemetry retention window (raw events). Default 180 days (design D6);
+	// a malformed value is non-fatal (the store is optional) — fall back.
+	cfg.TelemetryRetention = 180 * 24 * time.Hour
+	if v := os.Getenv("FDH_TELEMETRY_RETENTION"); v != "" {
+		if d, perr := time.ParseDuration(v); perr == nil && d > 0 {
+			cfg.TelemetryRetention = d
+		}
+	}
+
+	// Aggregation/retention loop interval. Default 1h.
+	cfg.TelemetryAggregateInterval = time.Hour
+	if v := os.Getenv("FDH_TELEMETRY_AGGREGATE_INTERVAL"); v != "" {
+		if d, perr := time.ParseDuration(v); perr == nil && d >= time.Minute {
+			cfg.TelemetryAggregateInterval = d
+		}
 	}
 
 	// The portal serves its catalog from the hub content at HubPath. The

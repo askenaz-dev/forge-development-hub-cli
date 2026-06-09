@@ -1,0 +1,136 @@
+{{- if .Values.telemetry.store.enabled }}
+# In-cluster usage-telemetry store (hub-usage-telemetry, Phase 2).
+#
+# Everything in this file is gated by .Values.telemetry.store.enabled and is
+# strictly ADDITIVE — with the flag off (the default) none of it renders and
+# the API receives no FDH_TELEMETRY_DSN, so telemetry stays best-effort/dropped
+# and the portal has no stateful dependency.
+#
+# This Postgres holds ONLY anonymous/pseudonymous TELEMETRY + USER-DATA. It is
+# NON-FATAL to the API at boot: an unreachable store never crashes the portal
+# nor blocks anonymous catalog reads (portal-runtime-resilience). Enabling it
+# only makes telemetry durable.
+{{- if not .Values.telemetry.store.existingSecret }}
+---
+# Secret: POSTGRES_PASSWORD (consumed by the Postgres container) + the assembled
+# FDH_TELEMETRY_DSN (consumed by the API StatefulSet). Only created when the
+# operator has NOT supplied an existing Secret. The password is generated once
+# and preserved across upgrades via a lookup (see fdh-portal.telemetry.password).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "fdh-portal.telemetry.name" . }}
+  labels:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: telemetry-store
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: {{ include "fdh-portal.telemetry.password" . | quote }}
+  FDH_TELEMETRY_DSN: {{ include "fdh-portal.telemetry.dsn" . | quote }}
+{{- end }}
+---
+# Headless Service: stable per-pod DNS for the Postgres StatefulSet. The API's
+# DSN host points at this name.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fdh-portal.telemetry.headlessName" . }}
+  labels:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: telemetry-store
+spec:
+  clusterIP: None
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    {{- include "fdh-portal.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: telemetry-store
+---
+# StatefulSet: a single-replica Postgres with a per-pod PVC (RWO local-path,
+# like the API's registry clone). Shared across all API replicas so cross-replica
+# aggregation is correct (design D1). volumeClaimTemplates labels carry only the
+# STABLE subset (no chart/version labels) so a chart-version bump never mutates
+# the immutable VCT — mirrors the API StatefulSet.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fdh-portal.telemetry.name" . }}
+  labels:
+    {{- include "fdh-portal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: telemetry-store
+spec:
+  serviceName: {{ include "fdh-portal.telemetry.headlessName" . }}
+  # A single shared instance (design D1): one Postgres reachable by every API
+  # replica, NOT one DB per API pod. Do not raise without real HA topology.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fdh-portal.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: telemetry-store
+  template:
+    metadata:
+      labels:
+        {{- include "fdh-portal.labels" . | nindent 8 }}
+        app.kubernetes.io/component: telemetry-store
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: postgres
+          image: "{{ .Values.telemetry.store.image.repository }}:{{ .Values.telemetry.store.image.tag }}"
+          imagePullPolicy: {{ .Values.telemetry.store.image.pullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.telemetry.store.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.telemetry.store.user | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fdh-portal.telemetry.secretName" . }}
+                  key: POSTGRES_PASSWORD
+            # Keep PGDATA in a subdir so the lost+found on the volume root does
+            # not collide with Postgres' empty-dir initdb check.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: telemetry-data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "{{ .Values.telemetry.store.user }}", "-d", "{{ .Values.telemetry.store.database }}"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "{{ .Values.telemetry.store.user }}", "-d", "{{ .Values.telemetry.store.database }}"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.telemetry.store.resources | nindent 12 }}
+  volumeClaimTemplates:
+    - metadata:
+        name: telemetry-data
+        labels:
+          # STABLE subset only (name + instance + component) — volumeClaimTemplates
+          # is IMMUTABLE, so chart/version-dependent labels must NOT be stamped
+          # here (see the API StatefulSet rationale).
+          {{- include "fdh-portal.selectorLabels" . | nindent 10 }}
+          app.kubernetes.io/component: telemetry-store
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.telemetry.store.persistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.telemetry.store.persistence.size | default "2Gi" | quote }}
+{{- end }}

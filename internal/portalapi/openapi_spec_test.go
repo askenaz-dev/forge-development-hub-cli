@@ -74,6 +74,22 @@ func TestOpenAPISpec_UIPathsUnchanged(t *testing.T) {
 	}
 }
 
+// TestOpenAPISpec_HasTelemetryIngest asserts the Stage-1 telemetry ingest path
+// is declared (server-rooted under /api/v1, so it appears as "/telemetry") and
+// references the closed TelemetryEvent schema. The admin analytics/observability/
+// feedback read paths are Stage 2 and intentionally NOT declared yet.
+func TestOpenAPISpec_HasTelemetryIngest(t *testing.T) {
+	h := newWireTestServer(t, "")
+	paths := openapiPaths(t, h)
+	require.Contains(t, paths, "/telemetry", "OpenAPI spec must declare the telemetry ingest path")
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, strings.Contains(w.Body.String(), "TelemetryEvent"),
+		"OpenAPI spec must define the TelemetryEvent schema")
+}
+
 func TestOpenAPISpec_WireSchemasReferenced(t *testing.T) {
 	h := newWireTestServer(t, "")
 	w := httptest.NewRecorder()
