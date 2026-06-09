@@ -95,6 +95,24 @@ headless Service's stable cluster DNS; sslmode=disable for the in-cluster hop.
 {{- printf "postgres://%s:%s@%s.%s.svc.cluster.local:5432/%s?sslmode=disable" .Values.telemetry.store.user $pw (include "fdh-portal.telemetry.headlessName" .) .Release.Namespace .Values.telemetry.store.database -}}
 {{- end -}}
 
+{{/*
+GitHub App ("the bot") secret name (portal-gitops-write, Phase 3). All gated by
+.Values.gitops.enabled at the call sites. When the operator supplies
+gitops.existingSecret, that name is used verbatim and the chart renders no Secret
+of its own; otherwise the chart-managed Secret name is derived from the release.
+*/}}
+{{- define "fdh-portal.gitops.name" -}}
+{{ include "fdh-portal.fullname" . }}-gitops
+{{- end -}}
+
+{{- define "fdh-portal.gitops.secretName" -}}
+{{- if .Values.gitops.existingSecret -}}
+{{ .Values.gitops.existingSecret }}
+{{- else -}}
+{{ include "fdh-portal.gitops.name" . }}
+{{- end -}}
+{{- end -}}
+
 {{- define "fdh-portal.web.image" -}}
 {{- $tag := .Values.web.image.tag | default .Chart.AppVersion -}}
 {{ .Values.web.image.repository }}:{{ $tag }}

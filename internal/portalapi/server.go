@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/forge/fdh/internal/portalapi/auth"
+	"github.com/forge/fdh/internal/portalapi/gitops"
 	"github.com/forge/fdh/internal/portalapi/telemetry"
 	"github.com/forge/fdh/pkg/registry"
 	"github.com/forge/fdh/pkg/scan"
@@ -32,6 +33,15 @@ type Server struct {
 	logger    *slog.Logger
 	metrics   *metricsRegistry
 	validator tokenValidator // nil when auth is disabled
+
+	// gitops is the propose-only GitHub App write client (capability
+	// portal-gitops-write). It is ALWAYS non-nil: when the GitHub App env is
+	// absent it is a DISABLED client (Enabled()==false) whose every method
+	// returns gitops.ErrGitopsNotConfigured, so the API still boots and serves
+	// catalog/admin reads while the write surface stays dark
+	// (portal-runtime-resilience). The write endpoints return a typed 503
+	// gitops_not_configured in that state — never a 500.
+	gitops gitops.Client
 
 	// startedAt is the process start time, used to report uptime on the admin
 	// observability surface (capability hub-usage-telemetry, task 6.2).
@@ -127,12 +137,28 @@ func New(cfg Config, build BuildInfo) (*Server, error) {
 		store, _ = telemetry.Open(context.Background(), "", slog.Default())
 	}
 
+	// Construct the gitops write client NON-FATALLY (portal-runtime-resilience).
+	// A missing GitHub App env yields a DISABLED client that returns
+	// ErrGitopsNotConfigured from every method; only a present-but-malformed
+	// value (e.g. an unparseable private key) errors here — surfaced as a warning
+	// and downgraded to a disabled client so the catalog still boots. The App
+	// installation token, when configured, is held ONLY in this API pod (never
+	// the web pod or the browser).
+	gitClient, gerr := gitops.NewFromEnv()
+	if gerr != nil {
+		slog.Default().Warn("gitops client construction failed; "+
+			"the web write surface stays dark (catalog/admin reads unaffected). "+
+			"Fix the GitHub App configuration to enable it", "err", gerr)
+		gitClient = gitops.Disabled()
+	}
+
 	srv := &Server{
 		cfg:       cfg,
 		build:     build,
 		logger:    slog.Default(),
 		metrics:   newMetrics(),
 		validator: validator,
+		gitops:    gitClient,
 		telemetry: store,
 		startedAt: time.Now().UTC(),
 		obs:       newObsStats(),
@@ -229,6 +255,16 @@ func (s *Server) Handler() http.Handler {
 	// /api/v1/admin/activation; the web's server-only BFF calls it with the
 	// Keycloak client-credentials service token for the logged-in user's email.
 	mux.HandleFunc("GET /api/v1/admin/contributions", s.handleGetContributions)
+
+	// --- GitOps write surface (capability portal-gitops-write). Role-gated via
+	// HasMinRole (author→import, publisher→harness, admin→curate), authorized by
+	// the Phase-1 BFF service credential (never a forwarded user IdP bearer). Each
+	// action composes EXACTLY one bot-opened PR on forge-development-hub; the bot
+	// can open but NEVER merge. A disabled gitops client (App env absent) returns
+	// a typed 503 gitops_not_configured, never a 500.
+	mux.HandleFunc("POST /api/v1/gitops/import", s.handleGitopsImport)
+	mux.HandleFunc("POST /api/v1/gitops/harness", s.handleGitopsHarness)
+	mux.HandleFunc("POST /api/v1/gitops/curate", s.handleGitopsCurate)
 
 	// --- Stage-2 admin reads (capability hub-usage-telemetry). ALL admin-gated
 	// exactly like /api/v1/admin/activation; reached from the web ONLY via the

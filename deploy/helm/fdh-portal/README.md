@@ -48,6 +48,9 @@ See `values.yaml` for the full surface. Key knobs:
 | `telemetry.store.enabled`     | `false`                                              | Opt-in: render the in-cluster Postgres telemetry store + Secret and wire `FDH_TELEMETRY_DSN` into the API (NON-FATAL when unreachable). |
 | `telemetry.store.existingSecret` | `""`                                              | Use a pre-existing Secret (`POSTGRES_PASSWORD` + `FDH_TELEMETRY_DSN`), e.g. a managed-Postgres DSN; the chart then creates no Secret. |
 | `telemetry.store.persistence.size` | `2Gi`                                           | Size of the Postgres PVC (StatefulSet).                  |
+| `gitops.enabled`              | `false`                                              | Opt-in: wire the GitHub App ("the bot") credential into the API so the web → Git CONFIG write surface lights up (portal-gitops-write). Off -> no `GITHUB_APP_*` env, no Secret; the API boots and serves reads, write endpoints return 503 `gitops_not_configured` (SHIPS DARK / NON-FATAL). |
+| `gitops.existingSecret`       | `""`                                                 | Use a pre-existing Secret holding the App id / installation id / private key (production path; the chart then creates no Secret). Empty -> the chart renders a Secret from the inline `gitops.appId`/`installationID`/`privateKey` literals (non-prod / dummy). |
+| `gitops.hub.owner` / `gitops.hub.repo` | `askenaz-dev` / `forge-development-hub`       | The single hub repo the App is installed on (single-repo scope).         |
 
 ## Upgrading: Deployment → StatefulSet (chart v0.2.0)
 
@@ -95,5 +98,14 @@ and refreshed its catalog. Open the portal at `https://<host>`.
   NON-FATAL to the API at boot (an unreachable store never crashes the portal
   nor blocks anonymous catalog reads). When the flag is off, no Postgres /
   Secret renders and the API gets no `FDH_TELEMETRY_DSN`.
+- The GitHub App ("the bot") registration/install — that is an **org-owner**
+  action (register the App with Contents:write + Pull-requests:write on the hub
+  repo only, install it, provision its id + private key into a Secret). The chart
+  only *wires* that Secret into the API via `secretKeyRef`, gated by
+  `gitops.enabled` (default off). Until provisioned, the web → Git write surface
+  ships **dark**: the API boots, catalog/admin reads serve, and write endpoints
+  return a typed 503 `gitops_not_configured` (portal-gitops-write,
+  portal-runtime-resilience). The bot is **propose-only** — it can open PRs but
+  never merge, so a leaked token cannot corrupt the catalog.
 - Code signing or supply-chain attestation — see the `ops-readiness`
   change for that work.

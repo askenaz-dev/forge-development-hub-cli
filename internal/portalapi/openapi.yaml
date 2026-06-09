@@ -608,6 +608,182 @@ paths:
               schema:
                 $ref: "#/components/schemas/WireError"
 
+  # --- GitOps write surface (capability portal-gitops-write) -----------------
+  # Role-gated CONFIG-via-PR write actions. Each opens EXACTLY one pull request
+  # on forge-development-hub via the portal-owned GitHub App ("the bot"). The bot
+  # can OPEN but can NEVER MERGE a PR — a human merges it under branch protection
+  # (no merge path exists in this server). Authorization uses the Phase-1 BFF
+  # portal SERVICE CREDENTIAL (a Keycloak client-credentials token validated by
+  # the same JWKS pipeline as every other bearer-gated path, mapped to a role),
+  # NOT a user IdP bearer (the web strips it from the session cookie). The
+  # requesting user's identity + role ride along as trusted metadata for PR
+  # attribution only. The role minimum is re-enforced here via HasMinRole
+  # (authoritative), independent of the BFF's advisory pre-check. Precedence:
+  # anonymous < consumer < author < reviewer < publisher < admin. When the
+  # GitHub App is not configured these return 503 gitops_not_configured (never
+  # 500). The success body carries the opened PR's URL.
+  /gitops/import:
+    post:
+      operationId: gitopsImport
+      summary: Import a component (author+) — bot opens a PR adding it as non-default
+      description: |
+        Imports a component from the web (skill-first). Accepts either a
+        multipart zip upload (field `bundle`) or a JSON skill-form. The server
+        runs the SAME validators the CLI runs (`pkg/bundle.Load`/`Validate`, the
+        portability lint, `pkg/scan.DirStatus`) and ABORTS BEFORE ANY PUSH on
+        failure, naming the failing check. On success the bot opens one PR on a
+        deterministic branch `web/import/<kind>/<name>` adding the bundle tree
+        under `<kind>s/<name>/` and a `hub/registry.yaml` v2 entry with
+        `default: false` and `agents_supported` from the bundle. The bot opens
+        but never merges. Minimum role: `author`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/GitopsImportMultipart"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitopsImportForm"
+      responses:
+        "201":
+          description: Import PR opened by the bot (never merged)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitopsPRResult"
+        "200":
+          description: An open PR for this action already exists (idempotent) — its URL is returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitopsPRResult"
+        "400":
+          description: Malformed request (bad multipart/JSON, missing kind/name)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: Validation failed, unsupported kind, or a name collision (no PR created)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          $ref: "#/components/responses/GitopsNotConfigured"
+
+  /gitops/harness:
+    post:
+      operationId: gitopsHarness
+      summary: Edit a harness (publisher+) — bot opens a PR touching only harnesses.yaml
+      description: |
+        Edits one harness in `hub/harnesses.yaml` (add/remove components per kind,
+        edit `description`/`owner_team`). Every ADDED component must exist in the
+        live catalog; an unknown reference is rejected (422) before composing so
+        harness validation cannot fail in CI. The bot opens one PR on
+        `web/harness/<harness-name>` whose only changed file is
+        `hub/harnesses.yaml`. The bot opens but never merges. Minimum role:
+        `publisher`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitopsHarnessRequest"
+      responses:
+        "201":
+          description: Harness PR opened by the bot (never merged)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitopsPRResult"
+        "200":
+          description: An open PR for this harness already exists (idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitopsPRResult"
+        "400":
+          description: Malformed request (missing harness name)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: A referenced component does not exist in the catalog (no PR created)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          $ref: "#/components/responses/GitopsNotConfigured"
+
+  /gitops/curate:
+    post:
+      operationId: gitopsCurate
+      summary: Curate default + lifecycle (admin) — bot opens a PR editing the registry
+      description: |
+        Sets a component's `default: true|false` (Gate 3) or drives a forward-only
+        lifecycle transition (`deprecate`/`yank`) on a version. A default change
+        ALSO edits the `default` harness in `hub/harnesses.yaml` in the SAME
+        atomic commit so CI's cross-reference stays green. Lifecycle is
+        forward-only (`active → deprecated → yanked`); un-yank is rejected (422)
+        and no PR is created. The bot opens one PR on
+        `web/curate/<kind>/<name>`. The bot opens but never merges. Minimum role:
+        `admin`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitopsCurateRequest"
+      responses:
+        "201":
+          description: Curate PR opened by the bot (never merged)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitopsPRResult"
+        "200":
+          description: An open PR for this entry already exists (idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitopsPRResult"
+        "400":
+          description: Malformed request (missing kind/name)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: Rejected lifecycle transition (e.g. un-yank) — no PR created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          $ref: "#/components/responses/GitopsNotConfigured"
+
 components:
   parameters:
     Namespace:
@@ -663,6 +839,20 @@ components:
             $ref: "#/components/schemas/Error"
     StoreUnavailable:
       description: Telemetry store temporarily unavailable (retry); never a 500
+      headers:
+        Retry-After:
+          schema: { type: string }
+          description: Seconds to wait before retrying.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    GitopsNotConfigured:
+      description: |
+        The portal GitHub App is not configured, so the web write surface is
+        unavailable. The API still serves catalog/admin reads. This is a typed
+        503 (never a 500): the code ships dark and lights up when the App secret
+        is wired by an org owner.
       headers:
         Retry-After:
           schema: { type: string }
@@ -1078,3 +1268,77 @@ components:
         namespace: { type: string }
         name: { type: string }
         version: { type: string }
+
+    # --- GitOps write schemas (capability portal-gitops-write) ---------------
+    GitopsPRResult:
+      type: object
+      description: |
+        The result of a GitOps write action. `pr_url` is the URL of the pull
+        request the bot opened (or, when `already_open` is true, the pre-existing
+        open PR for the deterministic branch — idempotency). `merged` is always
+        false: the bot is propose-only and cannot merge.
+      required: [pr_url, branch, already_open, merged]
+      properties:
+        pr_url: { type: string, format: uri, description: "URL of the bot-opened pull request on forge-development-hub." }
+        branch: { type: string, description: "Deterministic head branch the action targeted." }
+        already_open: { type: boolean, description: "True when an open PR for this action already existed and was returned instead of opening a duplicate." }
+        merged: { type: boolean, enum: [false], description: "Always false — the bot opens but never merges (a human merges under branch protection)." }
+
+    GitopsImportForm:
+      type: object
+      description: JSON skill-form import. The trusted requesting user/role is resolved server-side from the principal, not from this body.
+      required: [kind, name]
+      properties:
+        kind: { type: string, enum: [skill], description: "Importable kind (skill-first)." }
+        name: { type: string, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" }
+        description: { type: string, description: "Used to synthesize an entrypoint when no files are supplied." }
+        owner_team: { type: string }
+        agents:
+          type: array
+          items: { type: string, enum: [claude-code, codex, copilot, opencode] }
+        files:
+          type: object
+          description: "Map of bundle-relative path → file content. Must include the kind's entrypoint (e.g. SKILL.md) unless a description is given."
+          additionalProperties: { type: string }
+
+    GitopsImportMultipart:
+      type: object
+      description: Multipart zip import. The `bundle` field carries the zipped component bundle.
+      required: [kind, name, bundle]
+      properties:
+        kind: { type: string, enum: [skill] }
+        name: { type: string, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" }
+        owner_team: { type: string }
+        agents: { type: string, description: "Comma-separated agent ids." }
+        bundle: { type: string, format: binary, description: "Zip archive of the component bundle (size-capped)." }
+
+    GitopsHarnessRequest:
+      type: object
+      description: Harness edit. Add/remove are per kind; description/owner_team are optional scalar replacements. Every added component must exist in the catalog.
+      required: [harness]
+      properties:
+        harness: { type: string }
+        description: { type: string }
+        owner_team: { type: string }
+        add_skills: { type: array, items: { type: string } }
+        remove_skills: { type: array, items: { type: string } }
+        add_rules: { type: array, items: { type: string } }
+        remove_rules: { type: array, items: { type: string } }
+        add_agents: { type: array, items: { type: string } }
+        remove_agents: { type: array, items: { type: string } }
+        add_hooks: { type: array, items: { type: string } }
+        remove_hooks: { type: array, items: { type: string } }
+
+    GitopsCurateRequest:
+      type: object
+      description: |
+        Curate action. Provide EITHER set_default (Gate-3 default flag; the same
+        PR syncs the `default` harness atomically) OR a forward-only lifecycle
+        transition (deprecate/yank) on a version. Un-yank is rejected.
+      required: [kind, name]
+      properties:
+        kind: { type: string, enum: [skill, rule, agent, hook] }
+        name: { type: string, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" }
+        set_default: { type: boolean, description: "Set the registry default flag; syncs the default harness atomically." }
+        lifecycle: { type: string, enum: [deprecate, yank], description: "Forward-only lifecycle transition (requires version)." }
+        version: { type: string, description: "Target version for a lifecycle transition." }

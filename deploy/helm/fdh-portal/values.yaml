@@ -171,6 +171,70 @@ telemetry:
         cpu: 1000m
         memory: 512Mi
 
+# Web → Git CONFIG write surface (portal-gitops-write, Phase 3).
+#
+# The portal's server-side write path to the hub: a portal-owned GitHub App
+# ("the bot") opens — but can NEVER merge — pull requests on
+# forge-development-hub. It is PROPOSE-ONLY (decision D3): Contents:write +
+# Pull-requests:write on the hub repo only, no Administration, no merge. A leaked
+# bot token can open spammy PRs but cannot corrupt the catalog, because branch
+# protection still requires passing CI + a non-bot CODEOWNERS approval + no
+# self-merge. The App private key lives ONLY in the API pod (this secretKeyRef),
+# never in the browser or the web pod.
+#
+# SHIPS DARK / NON-FATAL BY DESIGN (portal-runtime-resilience): the Go API treats
+# the GitHub App as STRICTLY OPTIONAL at boot. With this block disabled (the
+# default), NONE of the GITHUB_APP_* / GITHUB_HUB_* env is set on the API; the
+# gitops client constructs as a DISABLED client (gitops.ErrGitopsNotConfigured),
+# the API still boots and serves catalog/admin reads, and the write endpoints
+# return a typed 503 gitops_not_configured (never a 500, never a crash). Enabling
+# this block "lights up" the write surface once an org owner has registered and
+# installed the App and provisioned its credentials. The App registration/install
+# is an awaits-org-owner runtime gate — the code ships before the secret exists.
+#
+# Mirrors how telemetry.store / oidc.clientSecretRef wire a secret: ADDITIVE,
+# values-flag-gated, sourced from an existing or chart-managed Secret. Do NOT put
+# real App id/key values here — supply them out-of-band via the Secret.
+gitops:
+  # Master switch. false (default) -> no GITHUB_APP_* env on the API, no Secret;
+  # the write surface stays dark and the API is unaffected.
+  enabled: false
+  # The single hub repository the App is installed on (single-repo scope). These
+  # are non-secret and default to the production hub; the API also defaults them
+  # internally, so overriding here is optional.
+  hub:
+    owner: "askenaz-dev"
+    repo: "forge-development-hub"
+  # Optional GitHub REST API root override (GHES). Empty -> https://api.github.com.
+  apiBaseURL: ""
+  # GitHub App credentials, sourced from a Kubernetes Secret (NOT embedded here).
+  #   - existingSecret: "<name>" -> the chart creates NO Secret; it reads the
+  #     keys below from that pre-existing Secret. This is the production path —
+  #     an org owner provisions the App id + private key + installation id into a
+  #     Secret out-of-band, e.g.:
+  #       kubectl create secret generic fdh-portal-gitops \
+  #         --from-literal=GITHUB_APP_ID=<app-id> \
+  #         --from-literal=GITHUB_APP_INSTALLATION_ID=<installation-id> \
+  #         --from-file=GITHUB_APP_PRIVATE_KEY=./app-private-key.pem \
+  #         --namespace fdh
+  #   - existingSecret: "" -> the chart renders a Secret from the literals below
+  #     (appId / installationID / privateKey). Intended for non-production / dummy
+  #     overrides; leave the literals empty in committed values.
+  existingSecret: ""
+  # Keys to read inside the Secret. Defaults match the env var names the Go API
+  # reads (internal/portalapi/gitops/github_client.go: ConfigFromEnv).
+  secretKeys:
+    appId: "GITHUB_APP_ID"
+    installationID: "GITHUB_APP_INSTALLATION_ID"
+    privateKey: "GITHUB_APP_PRIVATE_KEY"
+  # Inline credential values, used ONLY when existingSecret is empty (the chart
+  # then creates the Secret). Keep empty in committed values — never commit a real
+  # App private key. privateKey accepts raw PEM or base64-encoded PEM (the API
+  # decodes base64 transparently).
+  appId: ""
+  installationID: ""
+  privateKey: ""
+
 ingress:
   enabled: true
   className: "nginx"
